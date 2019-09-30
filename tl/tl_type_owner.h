@@ -77,6 +77,10 @@ protected:
 		return static_cast<const DataType &>(*_data);
 	}
 
+	bool hasData() const {
+		return _data != nullptr;
+	}
+
 private:
 	void incrementCounter() {
 		if (_data) {
@@ -89,7 +93,7 @@ private:
 		}
 	}
 
-	const type_data * _data = nullptr;
+	const type_data *_data = nullptr;
 
 };
 

@@ -193,6 +193,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   builtinTypes = scheme.get('builtin', [])
   builtinTemplateTypes = scheme.get('builtinTemplates', [])
   builtinInclude = scheme.get('builtinInclude', '')
+  nullableTypes = scheme.get('nullable', [])
   synonyms = scheme.get('synonyms', {})
   writeSections = scheme.get('sections', [])
   readWriteSection = 'read-write' in writeSections
@@ -696,6 +697,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     forwTypedefs += 'using ' + fullTypeName(resType) + ' = tl::boxed<' + fullTypeName(restype) + '>;\n'
 
     withType = (len(v) > 1)
+    nullable = restype in nullableTypes
     switchLines = ''
     friendDecl = ''
     getters = ''
@@ -712,37 +714,41 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         if len(v) > 1:
           conversionType = resType
           conversionHeader += fullTypeName(restype) + ' tl_from(' + conversionPointer(conversionType) + ' &&value);\n'
-          conversionSource += '\n\
-' + fullTypeName(restype) + ' tl_from(' + conversionPointer(conversionType) + ' &&value) {\n\
-\tExpects(value != nullptr);\n\
-\n\
-\tswitch (' + typeIdType + '(value->get_id())) {\n'
+          conversionSource += '\n' + fullTypeName(restype) + ' tl_from(' + conversionPointer(conversionType) + ' &&value) {\n'
+          if nullable:
+            conversionSource += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n\n'
+          else:
+            conversionSource += '\tExpects(value != nullptr);\n\n'
+          conversionSource += '\tswitch (' + typeIdType + '(value->get_id())) {\n'
           for data in v:
             name = data[0]
             prms = data[3]
             trivialConditions = data[7]
             conversionSource += '\tcase ' + idPrefix + name + ': return tl_from(' + conversionMove(name) + '(std::move(value)));\n'
-          conversionSource += '\tdefault: Unexpected("Type in ' + fullTypeName(restype) + ' tl_from.");\n\
-\t}\n\
-}\n'
+          conversionSource += '\tdefault: Unexpected("Type in ' + fullTypeName(restype) + ' tl_from.");\n\t}\n}\n'
         else:
           conversionType = v[0][0]
 
         conversionHeader += conversionPointer(conversionType) + ' tl_to(const ' + fullTypeName(restype) + ' &value);\n'
-        conversionSource += '\n\
-' + conversionPointer(conversionType) + ' tl_to(const ' + fullTypeName(restype) + ' &value) {\n\
-\tswitch (value.type()) {\n'
-        for data in v:
-          name = data[0]
-          prms = data[3]
-          trivialConditions = data[7]
-          if (len(prms) == len(trivialConditions)):
-            conversionSource += '\tcase ' + idPrefix + name + ': return ' + conversionMake(name) + '();\n'
-          else:
-            conversionSource += '\tcase ' + idPrefix + name + ': return tl_to(value.c_' + name + '());\n'
-        conversionSource += '\tdefault: Unexpected("Type in tl_to(' + fullTypeName(restype) + ').");\n\
-\t}\n\
-}\n'
+        conversionSource += '\n' + conversionPointer(conversionType) + ' tl_to(const ' + fullTypeName(restype) + ' &value) {\n'
+        if withType:
+          conversionSource += '\tswitch (value.type()) {\n'
+          if nullable:
+            conversionSource += '\tcase ' + typeIdType + '(0): return nullptr;\n'
+          for data in v:
+            name = data[0]
+            prms = data[3]
+            trivialConditions = data[7]
+            if (len(prms) == len(trivialConditions)):
+              conversionSource += '\tcase ' + idPrefix + name + ': return ' + conversionMake(name) + '();\n'
+            else:
+              conversionSource += '\tcase ' + idPrefix + name + ': return tl_to(value.c_' + name + '());\n'
+          conversionSource += '\tdefault: Unexpected("Type in tl_to(' + fullTypeName(restype) + ').");\n\t}\n'
+        else:
+          if nullable:
+            conversionSource += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n'
+          conversionSource += '\treturn tl_to(value.c_' + v[0][0] + '());\n'
+        conversionSource += '}\n'
 
     for data in v:
       name = data[0]
@@ -898,9 +904,10 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       if writeConversion and not restype in builtinTypes and not restype in conversionBuiltinTypes:
         conversionHeader += fullTypeName(restype) + ' tl_from(' + conversionPointer(name) + ' &&value);\n'
         conversionHeader += conversionPointer(name) + ' tl_to(const ' + fullDataName(name) + ' &value);\n'
-        conversionSource += '\n\
-' + fullTypeName(restype) + ' tl_from(' + conversionPointer(name) + ' &&value) {\n\
-\treturn ' + constructPrefix + normalizedName(name) + '('
+        conversionSource += '\n' + fullTypeName(restype) + ' tl_from(' + conversionPointer(name) + ' &&value) {\n'
+        if nullable:
+          conversionSource += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n\n'
+        conversionSource += '\treturn ' + constructPrefix + normalizedName(name) + '('
         conversionArguments = []
         for k in prmsList:
           if k in conditionsList:
@@ -908,11 +915,9 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             sys.exit(1)
           else:
             conversionArguments.append('tl_from(std::move(value->' + k + '_))')
-        conversionSource += ', '.join(conversionArguments) + ');\n\
-}\n\
-\n\
-' + conversionPointer(name) + ' tl_to(const ' + fullDataName(name) + ' &value) {\n\
-\treturn ' + conversionMake(name) + '('
+        conversionSource += ', '.join(conversionArguments) + ');\n'
+        conversionSource += '}\n\n' + conversionPointer(name) + ' tl_to(const ' + fullDataName(name) + ' &value) {\n'
+        conversionSource += '\treturn ' + conversionMake(name) + '('
         conversionArguments = []
         for k in prmsList:
           if (k in conditionsList):
@@ -920,21 +925,20 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             sys.exit(1)
           else:
             conversionArguments.append('tl_to(value.v' + k + '())')
-        conversionSource += ', '.join(conversionArguments) + ');\n\
-}\n'
+        conversionSource += ', '.join(conversionArguments) + ');\n}\n'
 
       switchLines += 'break;\n'
       dataText += '};\n'; # class ending
 
       dataTexts += dataText; # add data class
 
-      if (not friendDecl):
+      if not friendDecl:
         friendDecl += '\tfriend class ' + creatorNamespaceFull + '::TypeCreator;\n'
       creatorProxyText += '\tinline static ' + fullTypeName(restype) + ' new_' + name + '(' + ', '.join(creatorParams) + ') {\n'
-      if (len(prms) > len(trivialConditions)): # creator with params
+      if len(prms) > len(trivialConditions): # creator with params
         creatorProxyText += '\t\treturn ' + fullTypeName(restype) + '(new ' + fullDataName(name) + '(' + ', '.join(creatorParamsList) + '));\n'
       else:
-        if (withType): # creator by type
+        if withType: # creator by type
           creatorProxyText += '\t\treturn ' + fullTypeName(restype) + '(' + idPrefix + name + ');\n'
         else: # single creator
           creatorProxyText += '\t\treturn ' + fullTypeName(restype) + '();\n'
@@ -974,26 +978,46 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           writer += '\tconst ' + fullDataName(name) + ' &v = c_' + name + '();\n'
           writer += writeText
 
+    if nullable:
+      if not withType and not withData:
+        print('No way to make a nullable non-data-owner non-type-distinct type')
+        sys.exit(1)
+      elif readWriteSection:
+        print('No way to make read-write code for a nullable type')
+        sys.exit(1)
+
     forwards += '\n'
 
     typesText += '\nclass ' + fullTypeName(restype); # type class declaration
-    if (withData):
+    if withData:
       typesText += ' : private tl::details::type_owner'; # if has data fields
     typesText += ' {\n'
     typesText += 'public:\n'
     typesText += '\t' + fullTypeName(restype) + '();\n'; # default constructor
-    if (withData and not withType):
+    if withData and not withType:
       methods += '\n' + fullTypeName(restype) + '::' + fullTypeName(restype) + '() : type_owner(' + newFast + ') {\n}\n'
     else:
       methods += '\n' + fullTypeName(restype) + '::' + fullTypeName(restype) + '() = default;\n'
 
+    if nullable:
+      typesText += '\t' + fullTypeName(restype) + '(std::nullptr_t);\n'
+      methods += fullTypeName(restype) + '::' + fullTypeName(restype) + '(std::nullptr_t) {\n}\n'
+    typesText += '\n'
+    if nullable:
+      typesText += '\texplicit operator bool() const;\n'
+      methods += fullTypeName(restype) + '::operator bool() const {\n\t'
+      if withData:
+        methods += '\treturn hasData();\n'
+      else:
+        methods += '\treturn _type != 0;\n'
+      methods += '}\n'
     typesText += getters
     typesText += '\n'
     typesText += '\ttemplate <typename Method, typename ...Methods>\n'
     typesText += '\tdecltype(auto) match(Method &&method, Methods &&...methods) const;\n'
     visitorMethods += 'template <typename Method, typename ...Methods>\n'
     visitorMethods += 'decltype(auto) ' + fullTypeName(restype) + '::match(Method &&method, Methods &&...methods) const {\n'
-    if (withType):
+    if withType:
       visitorMethods += '\tswitch (_type) {\n'
       visitorMethods += visitor
       visitorMethods += '\t}\n'
@@ -1004,11 +1028,17 @@ def readAndGenerate(inputFiles, outputPath, scheme):
 
     typesText += '\t' + typeIdType + ' type() const;\n'; # type id method
     methods += typeIdType + ' ' + fullTypeName(restype) + '::type() const {\n'
-    if (withType):
-      methods += '\tExpects(_type != 0);\n\n'
-      methods += '\treturn _type;\n'
+    if withType:
+      if nullable:
+        methods += '\treturn _type;\n'
+      else:
+        methods += '\tExpects(_type != 0);\n\n'
+        methods += '\treturn _type;\n'
     else:
-      methods += '\treturn ' + idPrefix + v[0][0] + ';\n'
+      if nullable:
+        methods += '\treturn hasData() ? ' + idPrefix + v[0][0] + ' : ' + typeIdType + '(0);\n'
+      else:
+        methods += '\treturn ' + idPrefix + v[0][0] + ';\n'
     methods += '}\n'
 
     if readWriteSection:
