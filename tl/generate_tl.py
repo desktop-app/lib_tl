@@ -176,12 +176,11 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     return typePrefix + normalizedName(name)
   def fullDataName(name):
     return dataPrefix + normalizedName(name)
-  
+
   namespaces = scheme.get('namespaces')
   globalNamespace = namespaces.get('global', '')
-  globalNamespaceFull = '::' + (globalNamespace + '::' if globalNamespace != '' else '')
-  creatorNamespace = namespaces.get('creator')
-  creatorNamespaceFull = globalNamespaceFull + creatorNamespace
+  creatorNamespace = namespaces.get('creator', '')
+  creatorNamespaceFull = (globalNamespace + '::' if creatorNamespace != '' else globalNamespace) + creatorNamespace
 
   # this is a map (key flags -> map (flag name -> flag bit))
   # each key flag of parentFlags should be a subset of the value flag here
@@ -253,7 +252,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
 
   lines, layer, names = readInputs(inputFiles)
   inputNames = '\'' + '\', \''.join(names) + '\''
-  
+
   for line in lines:
     nocomment = re.match(r'^(.*?)//', line)
     if (nocomment):
@@ -933,7 +932,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       dataTexts += dataText; # add data class
 
       if not friendDecl:
-        friendDecl += '\tfriend class ' + creatorNamespaceFull + '::TypeCreator;\n'
+        friendDecl += '\tfriend class ::' + creatorNamespaceFull + '::TypeCreator;\n'
       creatorProxyText += '\tinline static ' + fullTypeName(restype) + ' new_' + name + '(' + ', '.join(creatorParams) + ') {\n'
       if len(prms) > len(trivialConditions): # creator with params
         creatorProxyText += '\t\treturn ' + fullTypeName(restype) + '(new ' + fullDataName(name) + '(' + ', '.join(creatorParamsList) + '));\n'
@@ -945,7 +944,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       creatorProxyText += '\t}\n'
       creatorsDeclarations += fullTypeName(restype) + ' ' + constructPrefix + name + '(' + ', '.join(creatorParams) + ');\n'
       creatorsBodies += fullTypeName(restype) + ' ' + constructPrefix + name + '(' + ', '.join(creatorParams) + ') {\n'
-      creatorsBodies += '\treturn ' + creatorNamespaceFull + '::TypeCreator::new_' + name + '(' + ', '.join(creatorParamsList) + ');\n'
+      creatorsBodies += '\treturn ::' + creatorNamespaceFull + '::TypeCreator::new_' + name + '(' + ', '.join(creatorParamsList) + ');\n'
       creatorsBodies += '}\n'
 
       if (withType):
@@ -1140,7 +1139,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   if serializationSection:
     textSerializeHeader = '\n\
 // Human-readable text serialization\n\
-[[nodiscard]] bool mtpTextSerializeType(MTPStringLogger &to, const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + primeType + ' cons, uint32 level, ' + primeType + ' vcons);\n'   
+[[nodiscard]] bool mtpTextSerializeType(MTPStringLogger &to, const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + primeType + ' cons, uint32 level, ' + primeType + ' vcons);\n'
 
   # manual types added here
     textSerializeMethods += '\
@@ -1273,13 +1272,12 @@ bool mtpTextSerializeType(MTPStringLogger &to, const ' + primeType + ' *&from, c
 #include "tl/tl_type_owner.h"\n\
 \n\
 ' + ('namespace ' + globalNamespace + ' {\n' if globalNamespace != '' else '') + '\
-namespace ' + creatorNamespace + ' {\n\
+' + ('namespace ' + creatorNamespace + ' {\n' if creatorNamespace != '' else '') + '\
 \n\
 ' + ('inline constexpr auto CurrentLayer = ' + primeType + '(' + str(layer) + ');\n\n' if layer != 0 else '') +'\
 class TypeCreator;\n\
 \n\
-} // namespace ' + creatorNamespace + '\n\
-\n\
+' + ('} // namespace ' + creatorNamespace + '\n\n' if creatorNamespace != '' else '') + '\
 // Type id constants\n\
 enum {\n\
 ' + ',\n'.join(enums) + '\n\
@@ -1313,15 +1311,14 @@ enum {\n\
 \n\
 // Creator proxy class definition\n\
 ' + ('namespace ' + globalNamespace + ' {\n' if globalNamespace != '' else '') + '\
-namespace ' + creatorNamespace + ' {\n\
+' + ('namespace ' + creatorNamespace + ' {\n' if creatorNamespace != '' else '') + '\
 \n\
-class TypeCreator {\n\
+class TypeCreator final {\n\
 public:\n\
 ' + creatorProxyText + '\n\
 };\n\
 \n\
-} // namespace ' + creatorNamespace + '\n\
-\n\
+' + ('} // namespace ' + creatorNamespace + '\n\n' if creatorNamespace != '' else '') + '\
 // Methods definition\n\
 ' + methods + '\n\
 ' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '') + textSerializeSource
