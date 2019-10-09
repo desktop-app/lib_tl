@@ -160,8 +160,8 @@ def generate(scheme):
 def readAndGenerate(inputFiles, outputPath, scheme):
   outputHeader = outputPath + '.h'
   outputSource = outputPath + '.cpp'
-  outputConversionHeader = outputPath + '_conversion.h'
-  outputConversionSource = outputPath + '_conversion.cpp'
+  outputConversionHeader = outputPath + '-conversion.h'
+  outputConversionSource = outputPath + '-conversion.cpp'
   outputHeaderBasename = os.path.basename(outputHeader)
   outputConversionHeaderBasename = os.path.basename(outputConversionHeader)
 
@@ -200,8 +200,12 @@ def readAndGenerate(inputFiles, outputPath, scheme):
 
   primitiveTypeNames = scheme.get('types')
   typeIdType = primitiveTypeNames.get('typeId')
-  primeType = primitiveTypeNames.get('prime')
-  bufferType = primitiveTypeNames.get('buffer')
+  primeType = primitiveTypeNames.get('prime', '')
+  bufferType = primitiveTypeNames.get('buffer', '')
+  if primeType == '' or bufferType == '':
+    if readWriteSection or serializationSection:
+      print('Required types not provided.')
+      sys.exit(1)
 
   writeConversion = 'conversion' in scheme
   conversionScheme = scheme.get('conversion', {})
@@ -528,31 +532,15 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       funcsText += '\t' + typeIdType + ' type() const {\n\t\treturn ' + idPrefix + name + ';\n\t}\n'; # type id
       if readWriteSection:
         funcsText += '\n'
-        funcsText += '\tuint32 innerLength() const;\n'; # count size
+        funcsText += '\ttemplate <typename Prime>\n'
+        funcsText += '\t[[nodiscard]] bool read(const Prime *&from, const Prime *end, ' + typeIdType + ' cons = ' + idPrefix + name + ');\n'; # read method
         if (isTemplate != ''):
           methodBodies += 'template <typename TQueryType>\n'
-          methodBodies += 'uint32 ' + fullTypeName(name) + '<TQueryType>::innerLength() const {\n'
+          methodBodies += 'template <typename Prime>\n'
+          methodBodies += 'bool ' + fullTypeName(name) + '<TQueryType>::read(const Prime *&from, const Prime *end, ' + typeIdType + ' cons) {\n'
         else:
-          methodBodies += 'uint32 ' + fullTypeName(name) + '::innerLength() const {\n'
-        size = []
-        for k in prmsList:
-          v = prms[k]
-          if (k in conditionsList):
-            if (not k in trivialConditions):
-              size.append('((_' + hasFlags + '.v & Flag::f_' + k + ') ? _' + k + '.innerLength() : 0)')
-          else:
-            size.append('_' + k + '.innerLength()')
-        if (not len(size)):
-          size.append('0')
-        methodBodies += '\treturn ' + ' + '.join(size) + ';\n'
-        methodBodies += '}\n'
-
-        funcsText += '\t[[nodiscard]] bool read(const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + typeIdType + ' cons = ' + idPrefix + name + ');\n'; # read method
-        if (isTemplate != ''):
-          methodBodies += 'template <typename TQueryType>\n'
-          methodBodies += 'bool ' + fullTypeName(name) + '<TQueryType>::read(const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + typeIdType + ' cons) {\n'
-        else:
-          methodBodies += 'bool ' + fullTypeName(name) + '::read(const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + typeIdType + ' cons) {\n'
+          methodBodies += 'template <typename Prime>\n'
+          methodBodies += 'bool ' + fullTypeName(name) + '::read(const Prime *&from, const Prime *end, ' + typeIdType + ' cons) {\n'
         readFunc = ''
         for k in prmsList:
           v = prms[k]
@@ -566,13 +554,18 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         else:
           methodBodies += '\treturn true;\n'
         methodBodies += '}\n'
+        if isTemplate == '':
+          methodBodies += 'template bool ' + fullTypeName(name) + '::read<' + primeType + '>(const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + typeIdType + ' cons);\n'
 
-        funcsText += '\tvoid write(' + bufferType + ' &to) const;\n'; # write method
+        funcsText += '\ttemplate <typename Accumulator>\n'
+        funcsText += '\tvoid write(Accumulator &to) const;\n'; # write method
         if (isTemplate != ''):
           methodBodies += 'template <typename TQueryType>\n'
-          methodBodies += 'void ' + fullTypeName(name) + '<TQueryType>::write(' + bufferType + ' &to) const {\n'
+          methodBodies += 'template <typename Accumulator>\n'
+          methodBodies += 'void ' + fullTypeName(name) + '<TQueryType>::write(Accumulator &to) const {\n'
         else:
-          methodBodies += 'void ' + fullTypeName(name) + '::write(' + bufferType + ' &to) const {\n'
+          methodBodies += 'template <typename Accumulator>\n'
+          methodBodies += 'void ' + fullTypeName(name) + '::write(Accumulator &to) const {\n'
         for k in prmsList:
           v = prms[k]
           if (k in conditionsList):
@@ -581,6 +574,9 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           else:
             methodBodies += '\t_' + k + '.write(to);\n'
         methodBodies += '}\n'
+        if isTemplate == '':
+          methodBodies += 'template void ' + fullTypeName(name) + '::write<' + bufferType + '>(' + bufferType + ' &to) const;\n'
+          methodBodies += 'template void ' + fullTypeName(name) + '::write<::tl::details::LengthCounter>(::tl::details::LengthCounter &to) const;\n'
 
       if writeConversion:
         conversionHeader += fullTypeName(name) + ' tl_from(' + conversionPointer(name) + ' &&value);\n'
@@ -703,10 +699,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     visitor = ''
     reader = ''
     writer = ''
-    sizeList = []
-    sizeFast = ''
     newFast = ''
-    sizeCases = ''
 
     if writeConversion:
       if not restype in builtinTypes and not restype in conversionBuiltinTypes:
@@ -768,7 +761,6 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       dataText += 'public:\n'
       dataText += '\ttemplate <typename Other>\n'
       dataText += '\tstatic constexpr bool Is() { return std::is_same_v<std::decay_t<Other>, ' + fullDataName(name) + '>; };\n\n'
-      sizeList = []
       creatorParams = []
       creatorParamsList = []
       readText = ''
@@ -839,11 +831,9 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           if (paramName in conditions):
             readText += '\t\t&& (v' + paramName + '() ? _' + paramName + '.read(from, end) : ((_' + paramName + ' = ' + fullTypeName(paramType) + '()), true))\n'
             writeText += '\t\tif (const auto v' + paramName + ' = v.v' + paramName + '()) v' + paramName + '->write(to);\n'
-            sizeList.append('(v.v' + paramName + '() ? v.v' + paramName + '()->innerLength() : 0)')
           else:
             readText += '\t\t&& _' + paramName + '.read(from, end)\n'
             writeText += '\t\tv.v' + paramName + '().write(to);\n'
-            sizeList.append('v.v' + paramName + '().innerLength()')
 
         dataText += ', '.join(prmsStr) + ');\n'
 
@@ -884,11 +874,6 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             paramType = prms[paramName]
             dataText += '\t' + fullTypeName(paramType) + ' _' + paramName + ';\n'
           dataText += '\n'
-        sizeCases += '\tcase ' + idPrefix + name + ': {\n'
-        sizeCases += '\t\tconst ' + fullDataName(name) + ' &v(c_' + name + '());\n'
-        sizeCases += '\t\treturn ' + ' + '.join(sizeList) + ';\n'
-        sizeCases += '\t}\n'
-        sizeFast = '\tconst ' + fullDataName(name) + ' &v(c_' + name + '());\n\treturn ' + ' + '.join(sizeList) + ';\n'
         newFast = 'new ' + fullDataName(name) + '()'
       else:
         constructsBodies += 'const ' + fullDataName(name) + ' &' + fullTypeName(restype) + '::c_' + name + '() const {\n'
@@ -897,8 +882,6 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         constructsBodies += '\tstatic const ' + fullDataName(name) + ' result;\n'
         constructsBodies += '\treturn result;\n'
         constructsBodies += '}\n'
-
-        sizeFast = '\treturn 0;\n'
 
       if writeConversion and not restype in builtinTypes and not restype in conversionBuiltinTypes:
         conversionHeader += fullTypeName(restype) + ' tl_from(' + conversionPointer(name) + ' &&value);\n'
@@ -1041,17 +1024,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     methods += '}\n'
 
     if readWriteSection:
-      typesText += '\n\tuint32 innerLength() const;\n'; # size method
-      methods += '\nuint32 ' + fullTypeName(restype) + '::innerLength() const {\n'
-      if (withType and sizeCases):
-        methods += '\tswitch (_type) {\n'
-        methods += sizeCases
-        methods += '\t}\n'
-        methods += '\treturn 0;\n'
-      else:
-        methods += sizeFast
-      methods += '}\n'
-
+      typesText += '\n'
       typesText += '\t[[nodiscard]] bool read(const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + typeIdType + ' cons'; # read method
       if (not withType):
         typesText += ' = ' + idPrefix + name
@@ -1070,8 +1043,10 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       methods += '\treturn true;\n'
       methods += '}\n'
 
-      typesText += '\tvoid write(' + bufferType + ' &to) const;\n'; # write method
-      methods += 'void ' + fullTypeName(restype) + '::write(' + bufferType + ' &to) const {\n'
+      typesText += '\ttemplate <typename Accumulator>\n' # write method
+      typesText += '\tvoid write(Accumulator &to) const;\n'
+      methods += 'template <typename Accumulator>\n'
+      methods += 'void ' + fullTypeName(restype) + '::write(Accumulator &to) const {\n'
       if (withType and writer != ''):
         methods += '\tswitch (_type) {\n'
         methods += writer
@@ -1079,6 +1054,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       else:
         methods += writer
       methods += '}\n'
+      methods += 'template void ' + fullTypeName(restype) + '::write<' + bufferType + '>(' + bufferType + ' &to) const;\n'
+      methods += 'template void ' + fullTypeName(restype) + '::write<::tl::details::LengthCounter>(::tl::details::LengthCounter &to) const;\n'
 
     typesText += '\n\tusing ResponseType = void;\n'; # no response types declared
 

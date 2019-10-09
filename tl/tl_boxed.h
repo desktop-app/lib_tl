@@ -12,6 +12,9 @@
 
 namespace tl {
 
+template <typename Accumulator>
+class Writer;
+
 template <typename bare>
 class boxed : public bare {
 public:
@@ -27,18 +30,17 @@ public:
 		return *this;
 	}
 
-	uint32 innerLength() const {
-		return sizeof(uint32) + bare::innerLength();
-	}
-	[[nodiscard]] bool read(const int32 *&from, const int32 *end, uint32 cons = 0) {
-		if (from + 1 > end) {
+	template <typename Prime>
+	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = 0) {
+		if (!Reader<Prime>::Has(1, from, end)) {
 			return false;
 		}
-		cons = static_cast<uint32>(*(from++));
+		cons = Reader<Prime>::Get(from, end);
 		return bare::read(from, end, cons);
 	}
-	void write(QVector<int32> &to) const {
-		to.push_back(bare::type());
+	template <typename Accumulator>
+	void write(Accumulator &to) const {
+		Writer<Accumulator>::Put(to, bare::type());
 		bare::write(to);
 	}
 
