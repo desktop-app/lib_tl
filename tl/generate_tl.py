@@ -828,12 +828,14 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             creatorParams.append('const ' + fullTypeName(paramType) + ' &' + paramName + '_')
           creatorParamsList.append(paramName + '_')
           prmsInit.append('_' + paramName + '(' + paramName + '_)')
+          if withType:
+            writeText += '\t'
           if (paramName in conditions):
             readText += '\t\t&& (v' + paramName + '() ? _' + paramName + '.read(from, end) : ((_' + paramName + ' = ' + fullTypeName(paramType) + '()), true))\n'
-            writeText += '\t\tif (const auto v' + paramName + ' = v.v' + paramName + '()) v' + paramName + '->write(to);\n'
+            writeText += '\tif (const auto v' + paramName + ' = v.v' + paramName + '()) v' + paramName + '->write(to);\n'
           else:
             readText += '\t\t&& _' + paramName + '.read(from, end)\n'
-            writeText += '\t\tv.v' + paramName + '().write(to);\n'
+            writeText += '\tv.v' + paramName + '().write(to);\n'
 
         dataText += ', '.join(prmsStr) + ');\n'
 

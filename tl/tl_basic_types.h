@@ -444,6 +444,7 @@ public:
 		} else {
 			const auto encoded = (size << 8) | 254U;
 			Writer<Accumulator>::Put(to, encoded);
+			Writer<Accumulator>::PutBytes(to, v.data(), size);
 		}
 	}
 
