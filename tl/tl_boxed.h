@@ -13,7 +13,7 @@
 namespace tl {
 
 template <typename Accumulator>
-class Writer;
+struct Writer;
 
 template <typename bare>
 class boxed : public bare {
