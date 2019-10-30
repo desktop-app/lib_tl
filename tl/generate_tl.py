@@ -705,8 +705,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       if not restype in builtinTypes and not restype in conversionBuiltinTypes:
         if len(v) > 1:
           conversionType = resType
-          conversionHeader += fullTypeName(restype) + ' tl_from(' + conversionPointer(conversionType) + ' &&value);\n'
-          conversionSource += '\n' + fullTypeName(restype) + ' tl_from(' + conversionPointer(conversionType) + ' &&value) {\n'
+          conversionHeader += fullTypeName(resType) + ' tl_from(' + conversionPointer(conversionType) + ' &&value);\n'
+          conversionSource += '\n' + fullTypeName(resType) + ' tl_from(' + conversionPointer(conversionType) + ' &&value) {\n'
           if nullable:
             conversionSource += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n\n'
           else:
