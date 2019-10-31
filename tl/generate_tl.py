@@ -281,7 +281,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     name = originalname
     if (name in renamedTypes):
       name = renamedTypes[name]
-    nameInd = name.find('.')
+    nameInd = name.rfind('.')
     if (nameInd >= 0):
       Name = name[0:nameInd] + '_' + name[nameInd + 1:nameInd + 2].upper() + name[nameInd + 2:]
       name = normalizedName(name)
@@ -349,9 +349,9 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         sys.exit(1)
     resType = normalizedName(restype)
     if (restype.find('.') >= 0):
-      parts = re.match(r'([a-zA-Z0-9]+)\.([A-Z][A-Za-z0-9<>\._]+)', restype)
+      parts = re.match(r'([a-zA-Z0-9\.]+)\.([A-Z][A-Za-z0-9<>_]+)', restype)
       if (parts):
-        restype = parts.group(1) + '_' + parts.group(2)[0:1].lower() + parts.group(2)[1:]
+        restype = parts.group(1).replace('.', '_') + '_' + parts.group(2)[0:1].lower() + parts.group(2)[1:]
       else:
         print('Bad result type name with dot: ' + restype)
         sys.exit(1)
