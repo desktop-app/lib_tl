@@ -180,7 +180,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   namespaces = scheme.get('namespaces')
   globalNamespace = namespaces.get('global', '')
   creatorNamespace = namespaces.get('creator', '')
-  creatorNamespaceFull = (globalNamespace + '::' if creatorNamespace != '' else globalNamespace) + creatorNamespace
+  creatorNamespaceFull = (globalNamespace + '::' if creatorNamespace != '' and globalNamespace != '' else globalNamespace) + creatorNamespace
 
   # this is a map (key flags -> map (flag name -> flag bit))
   # each key flag of parentFlags should be a subset of the value flag here
