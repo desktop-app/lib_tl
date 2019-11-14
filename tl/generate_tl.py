@@ -41,7 +41,7 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
       if (isTemplate != ''):
           templateArgument = '<MTP::SecureRequest>'
 
-      result += 'bool Serialize_' + name + '(MTPStringLogger &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n'
+      result += 'bool Serialize_' + name + '(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n'
       if (len(conditions)):
         result += '\tauto flag = ' + prefix + name + templateArgument + '::Flags::from_raw(iflag);\n\n'
       if (len(prms)):
@@ -162,8 +162,11 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   outputSource = outputPath + '.cpp'
   outputConversionHeader = outputPath + '-conversion.h'
   outputConversionSource = outputPath + '-conversion.cpp'
+  outputSerializationHeader = outputPath + '-dump_to_text.h'
+  outputSerializationSource = outputPath + '-dump_to_text.cpp'
   outputHeaderBasename = os.path.basename(outputHeader)
   outputConversionHeaderBasename = os.path.basename(outputConversionHeader)
+  outputSerializationHeaderBasename = os.path.basename(outputSerializationHeader)
 
   prefixes = scheme.get('prefixes', {})
   dataPrefix = prefixes.get('data', '')
@@ -196,16 +199,11 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   synonyms = scheme.get('synonyms', {})
   writeSections = scheme.get('sections', [])
   readWriteSection = 'read-write' in writeSections
-  serializationSection = 'serialization' in writeSections
 
   primitiveTypeNames = scheme.get('types')
   typeIdType = primitiveTypeNames.get('typeId')
   primeType = primitiveTypeNames.get('prime', '')
   bufferType = primitiveTypeNames.get('buffer', '')
-  if primeType == '' or bufferType == '':
-    if readWriteSection or serializationSection:
-      print('Required types not provided.')
-      sys.exit(1)
 
   writeConversion = 'conversion' in scheme
   conversionScheme = scheme.get('conversion', {})
@@ -223,6 +221,15 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     return conversionTemplate('make_object', name)
   def conversionMove(name):
     return conversionTemplate('move_object_as', name)
+
+  writeSerialization = 'dumpToText' in scheme
+  serializationScheme = scheme.get('dumpToText', {})
+  serializationInclude = serializationScheme.get('include') if writeSerialization else ''
+
+  if primeType == '' or bufferType == '':
+    if readWriteSection or writeSerialization:
+      print('Required types not provided.')
+      sys.exit(1)
 
   def isBuiltinType(name):
     return name in builtinTypes or name in builtinTemplateTypes
@@ -1113,16 +1120,12 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     flagOperators += 'inline ' + parentName + '::Flags mtpCastFlags(' + childName + '::Flags flags) { return static_cast<' + parentName + '::Flag>(flags.value()); }\n'
     flagOperators += 'inline ' + parentName + '::Flags mtpCastFlags(MTPflags<' + childName + '::Flags> flags) { return mtpCastFlags(flags.v); }\n'
 
-  textSerializeHeader = ''
   textSerializeSource = ''
-  if serializationSection:
-    textSerializeHeader = '\n\
-// Human-readable text serialization\n\
-[[nodiscard]] bool mtpTextSerializeType(MTPStringLogger &to, const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + primeType + ' cons, uint32 level, ' + primeType + ' vcons);\n'
+  if writeSerialization:
+    # manual types added here
 
-  # manual types added here
     textSerializeMethods += '\
-bool _serialize_rpc_result(MTPStringLogger &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
+bool Serialize_rpc_result(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
 	if (stage) {\n\
 		to.add(",\\n").addSpaces(lev);\n\
 	} else {\n\
@@ -1137,7 +1140,7 @@ bool _serialize_rpc_result(MTPStringLogger &to, int32 stage, int32 lev, Types &t
 	return true;\n\
 }\n\
 \n\
-bool _serialize_msg_container(MTPStringLogger &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
+bool Serialize_msg_container(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
 	if (stage) {\n\
 		to.add(",\\n").addSpaces(lev);\n\
 	} else {\n\
@@ -1151,7 +1154,7 @@ bool _serialize_msg_container(MTPStringLogger &to, int32 stage, int32 lev, Types
 	return true;\n\
 }\n\
 \n\
-bool _serialize_core_message(MTPStringLogger &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
+bool Serialize_core_message(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
 	if (stage) {\n\
 		to.add(",\\n").addSpaces(lev);\n\
 	} else {\n\
@@ -1170,20 +1173,21 @@ bool _serialize_core_message(MTPStringLogger &to, int32 stage, int32 lev, Types 
 \n'
 
     textSerializeInit += '\
-	result.insert(' + idPrefix + 'rpc_result, _serialize_rpc_result);\n\
-	result.insert(' + idPrefix + 'msg_container, _serialize_msg_container);\n\
-	result.insert(' + idPrefix + 'core_message, _serialize_core_message);\n'
+	result.insert(' + idPrefix + 'rpc_result, Serialize_rpc_result);\n\
+	result.insert(' + idPrefix + 'msg_container, Serialize_msg_container);\n\
+	result.insert(' + idPrefix + 'core_message, Serialize_core_message);\n'
     textSerializeSource = '\n\
+namespace {\n\
+\n\
 using Types = QVector<' + typeIdType + '>;\n\
 using StagesFlags = QVector<int32>;\n\
 \n\
 ' + textSerializeMethods + '\n\
-namespace {\n\
 \n\
-using TextSerializer = bool (*)(MTPStringLogger &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag);\n\
+using TextSerializer = bool (*)(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag);\n\
 using TextSerializers = QMap<' + typeIdType + ', TextSerializer>;\n\
 \n\
-QMap<' + typeIdType + ', TextSerializer> createTextSerializers() {\n\
+QMap<' + typeIdType + ', TextSerializer> CreateTextSerializers() {\n\
 	auto result = QMap<' + typeIdType + ', TextSerializer>();\n\
 \n\
 ' + textSerializeInit + '\n\
@@ -1192,8 +1196,8 @@ QMap<' + typeIdType + ', TextSerializer> createTextSerializers() {\n\
 \n\
 } // namespace\n\
 \n\
-bool mtpTextSerializeType(MTPStringLogger &to, const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + primeType + ' cons, uint32 level, ' + primeType + ' vcons) {\n\
-	static auto serializers = createTextSerializers();\n\
+bool DumpToTextType(DumpToTextBuffer &to, const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + primeType + ' cons, uint32 level, ' + primeType + ' vcons) {\n\
+	static auto kSerializers = CreateTextSerializers();\n\
 \n\
 	QVector<' + typeIdType + '> types, vtypes;\n\
 	QVector<int32> stages, flags;\n\
@@ -1221,13 +1225,13 @@ bool mtpTextSerializeType(MTPStringLogger &to, const ' + primeType + ' *&from, c
 		}\n\
 \n\
 		int32 lev = level + types.size() - 1;\n\
-		auto it = serializers.constFind(type);\n\
-		if (it != serializers.cend()) {\n\
+		auto it = kSerializers.constFind(type);\n\
+		if (it != kSerializers.cend()) {\n\
 			if (!(*it.value())(to, stage, lev, types, vtypes, stages, flags, from, end, flag)) {\n\
 				to.error();\n\
 				return false;\n\
 			}\n\
-		} else if (mtpTextSerializeCore(to, from, end, type, lev, vtype)) {\n\
+		} else if (DumpToTextCore(to, from, end, type, lev, vtype)) {\n\
 			types.pop_back(); vtypes.pop_back(); stages.pop_back(); flags.pop_back();\n\
 		} else {\n\
 			to.error();\n\
@@ -1280,7 +1284,7 @@ enum {\n\
 ' + flagOperators + '\n\
 // Factory methods declaration\n\
 ' + factories + '\n\
-' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '') + textSerializeHeader
+' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '')
 
   source = '\
 // WARNING! All changes made in this file will be lost!\n\
@@ -1300,7 +1304,7 @@ public:\n\
 ' + ('} // namespace ' + creatorNamespace + '\n\n' if creatorNamespace != '' else '') + '\
 // Methods definition\n\
 ' + methods + '\n\
-' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '') + textSerializeSource
+' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '')
 
   conversionHeader = '\
 // WARNING! All changes made in this file will be lost!\n\
@@ -1325,6 +1329,33 @@ public:\n\
 ' + ('namespace ' + globalNamespace + ' {\n' if globalNamespace != '' else '') + '\
 ' + conversionSource + '\n\
 ' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '')
+
+  serializationHeader = '\
+// WARNING! All changes made in this file will be lost!\n\
+// Created from ' + inputNames + ' by \'generate.py\'\n\
+//\n\
+#pragma once\n\
+\n\
+' + ('#include "' + builtinInclude + '"\n\n' if builtinInclude != '' else '') + '\
+namespace MTP::details {\n\
+\n\
+struct DumpToTextBuffer;\n\
+\n\
+[[nodiscard]] bool DumpToTextType(DumpToTextBuffer &to, const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + primeType + ' cons = 0, uint32 level = 0, ' + primeType + ' vcons = 0);\n\
+\n\
+} // namespace MTP::details\n'
+
+  serializationSource = '\
+// WARNING! All changes made in this file will be lost!\n\
+// Created from ' + inputNames + ' by \'generate.py\'\n\
+//\n\
+#include "' + outputSerializationHeaderBasename + '"\n\
+#include "' + outputHeaderBasename + '"\n\
+#include "' + serializationInclude + '"\n\
+\n\
+namespace MTP::details {\n\
+' + textSerializeSource + '\n\
+} // namespace MTP::details\n'
 
   alreadyHeader = ''
   if os.path.isfile(outputHeader):
@@ -1358,3 +1389,20 @@ public:\n\
     if alreadySource != conversionSource:
       with open(outputConversionSource, 'w') as out:
         out.write(conversionSource)
+
+  if writeSerialization:
+    alreadyHeader = ''
+    if os.path.isfile(outputSerializationHeader):
+      with open(outputSerializationHeader, 'r') as already:
+        alreadyHeader = already.read()
+    if alreadyHeader != serializationHeader:
+      with open(outputSerializationHeader, 'w') as out:
+        out.write(serializationHeader)
+
+    alreadySource = ''
+    if os.path.isfile(outputSerializationSource):
+      with open(outputSerializationSource, 'r') as already:
+        alreadySource = already.read()
+    if alreadySource != serializationSource:
+      with open(outputSerializationSource, 'w') as out:
+        out.write(serializationSource)
