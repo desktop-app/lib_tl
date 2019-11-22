@@ -39,7 +39,7 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
 
       templateArgument = ''
       if (isTemplate != ''):
-          templateArgument = '<MTP::SecureRequest>'
+          templateArgument = '<SerializedRequest>'
 
       result += 'bool Serialize_' + name + '(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n'
       if (len(conditions)):
