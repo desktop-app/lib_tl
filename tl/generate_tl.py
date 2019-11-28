@@ -1358,3 +1358,6 @@ public:\n\
     if alreadySource != conversionSource:
       with open(outputConversionSource, 'w') as out:
         out.write(conversionSource)
+
+  with open(outputPath + '.timestamp', 'w') as out:
+    out.write('1')
