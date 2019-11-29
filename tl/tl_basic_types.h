@@ -510,9 +510,7 @@ inline bool operator!=(const string_type &a, const string_type &b) {
 	return a.v != b.v;
 }
 
-inline QString utf16(const QByteArray &v) {
-	return QString::fromUtf8(v);
-}
+QString utf16(const QByteArray &v);
 
 inline QByteArray utf8(const QByteArray &v) {
 	return v;

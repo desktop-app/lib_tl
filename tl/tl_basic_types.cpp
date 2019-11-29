@@ -6,3 +6,10 @@
 //
 #include "tl/tl_basic_types.h"
 
+namespace tl {
+
+QString utf16(const QByteArray &v) {
+	return QString::fromUtf8(v);
+}
+
+} // namespace tl
