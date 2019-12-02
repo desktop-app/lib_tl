@@ -1257,7 +1257,7 @@ bool DumpToTextType(DumpToTextBuffer &to, const ' + primeType + ' *&from, const 
 ' + ('namespace ' + globalNamespace + ' {\n' if globalNamespace != '' else '') + '\
 ' + ('namespace ' + creatorNamespace + ' {\n' if creatorNamespace != '' else '') + '\
 \n\
-' + ('inline constexpr auto CurrentLayer = ' + primeType + '(' + str(layer) + ');\n\n' if layer != 0 else '') +'\
+' + ('inline constexpr auto kCurrentLayer = ' + primeType + '(' + str(layer) + ');\n\n' if layer != 0 else '') +'\
 class TypeCreator;\n\
 \n\
 ' + ('} // namespace ' + creatorNamespace + '\n\n' if creatorNamespace != '' else '') + '\
