@@ -10,7 +10,7 @@ init_target(lib_tl)
 
 get_filename_component(src_loc . REALPATH)
 
-set(lib_tl_sources
+nice_target_sources(lib_tl ${src_loc}
 PRIVATE
     tl/tl_basic_types.cpp
     tl/tl_basic_types.h
@@ -19,7 +19,6 @@ PRIVATE
 
     tl/generate_tl.py
 )
-nice_target_sources(lib_tl ${src_loc} "${lib_tl_sources}")
 
 target_include_directories(lib_tl
 PUBLIC
