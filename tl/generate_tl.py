@@ -179,6 +179,33 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     return typePrefix + normalizedName(name)
   def fullDataName(name):
     return dataPrefix + normalizedName(name)
+  def handleTemplate(name):
+    templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._<>]+)>$', name)
+    if (templ):
+      vectemplate = templ.group(2)
+      if (vectemplate.find('<') >= 0):
+        return templ.group(1) + fullTypeName(handleTemplate(vectemplate)) + '>'
+      elif (re.match(r'^[A-Z]', vectemplate) or re.match(r'^[a-zA-Z0-9]+\.[A-Z]', vectemplate)):
+        return templ.group(1) + fullTypeName(vectemplate) + '>'
+      elif (vectemplate in builtinTypes):
+        return templ.group(1) + fullTypeName(vectemplate) + '>'
+      else:
+        foundmeta = ''
+        for metatype in typesDict:
+          for typedata in typesDict[metatype]:
+            if (typedata[0] == normalizedName(vectemplate)):
+              foundmeta = metatype
+              break
+          if (len(foundmeta) > 0):
+            break
+        if (len(foundmeta) > 0):
+          return templ.group(1) + fullTypeName(foundmeta) + '>'
+        else:
+          print('Bad vector param: ' + vectemplate)
+          sys.exit(1)
+    else:
+      print('Bad template type: ' + name)
+      sys.exit(1)
 
   namespaces = scheme.get('namespaces')
   globalNamespace = namespaces.get('global', '')
@@ -330,30 +357,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     params = nametype.group(3)
     restype = nametype.group(4)
     if (restype.find('<') >= 0):
-      templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._]+)>$', restype)
-      if (templ):
-        vectemplate = templ.group(2)
-        if (re.match(r'^[A-Z]', vectemplate) or re.match(r'^[a-zA-Z0-9]+\.[A-Z]', vectemplate)):
-          restype = templ.group(1) + fullTypeName(vectemplate) + '>'
-        elif (vectemplate in builtinTypes):
-          restype = templ.group(1) + fullTypeName(vectemplate) + '>'
-        else:
-          foundmeta = ''
-          for metatype in typesDict:
-            for typedata in typesDict[metatype]:
-              if (typedata[0] == vectemplate):
-                foundmeta = metatype
-                break
-            if (len(foundmeta) > 0):
-              break
-          if (len(foundmeta) > 0):
-            ptype = templ.group(1) + fullTypeName(foundmeta) + '>'
-          else:
-            print('Bad vector param: ' + vectemplate)
-            sys.exit(1)
-      else:
-        print('Bad template type: ' + restype)
-        sys.exit(1)
+      restype = handleTemplate(restype)
     resType = normalizedName(restype)
     if (restype.find('.') >= 0):
       parts = re.match(r'([a-zA-Z0-9\.]+)\.([A-Z][A-Za-z0-9<>_]+)', restype)
@@ -416,61 +420,14 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             sys.exit(1)
           ptype = pmasktype.group(3)
           if (ptype.find('<') >= 0):
-            templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._]+)>$', ptype)
-            if (templ):
-              vectemplate = templ.group(2)
-              if (re.match(r'^[A-Z]', vectemplate) or re.match(r'^[a-zA-Z0-9]+\.[A-Z]', vectemplate)):
-                ptype = templ.group(1) + fullTypeName(vectemplate) + '>'
-              elif (vectemplate in builtinTypes):
-                ptype = templ.group(1) + fullTypeName(vectemplate) + '>'
-              else:
-                foundmeta = ''
-                for metatype in typesDict:
-                  for typedata in typesDict[metatype]:
-                    if (typedata[0] == vectemplate):
-                      foundmeta = metatype
-                      break
-                  if (len(foundmeta) > 0):
-                    break
-                if (len(foundmeta) > 0):
-                  ptype = templ.group(1) + fullTypeName(foundmeta) + '>'
-                else:
-                  print('Bad vector param: ' + vectemplate)
-                  sys.exit(1)
-            else:
-              print('Bad template type: ' + ptype)
-              sys.exit(1)
+            ptype = handleTemplate(ptype)
           if (not pname in conditions):
             conditionsList.append(pname)
             conditions[pname] = pmasktype.group(2)
             if (ptype == 'true'):
               trivialConditions[pname] = 1
         elif (ptype.find('<') >= 0):
-          templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._]+)>$', ptype)
-          if (templ):
-            vectemplate = templ.group(2)
-            if (vectemplate in builtinTypes):
-              ptype = templ.group(1) + fullTypeName(vectemplate) + '>'
-            elif (re.match(r'^[A-Z]', vectemplate) or re.match(r'^[a-zA-Z0-9]+\.[A-Z]', vectemplate)):
-              ptype = templ.group(1) + fullTypeName(vectemplate) + '>'
-            else:
-              foundmeta = ''
-              for metatype in typesDict:
-                for typedata in typesDict[metatype]:
-                  if typedata[0] == normalizedName(vectemplate):
-                    foundmeta = metatype
-                    break
-                if (len(foundmeta) > 0):
-                  break
-              if (len(foundmeta) > 0):
-                ptype = templ.group(1) + fullTypeName(foundmeta) + '>'
-              else:
-                print('Found no meta: ' + vectemplate)
-                print('Bad vector param: ' + vectemplate)
-                sys.exit(1)
-          else:
-            print('Bad template type: ' + ptype)
-            sys.exit(1)
+          ptype = handleTemplate(ptype)
       prmsList.append(pname)
       prms[pname] = normalizedName(ptype)
 
