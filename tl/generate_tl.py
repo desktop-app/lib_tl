@@ -680,7 +680,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             name = data[0]
             prms = data[3]
             trivialConditions = data[7]
-            conversionSource += '\tcase ' + conversionName(name) + '::ID: return tl_from(' + conversionMove(name) + '(std::move(value)));\n'
+            conversionSource += '\tcase uint32(' + conversionName(name) + '::ID): return tl_from(' + conversionMove(name) + '(std::move(value)));\n'
           conversionSource += '\tdefault: Unexpected("Type in ' + fullTypeName(restype) + ' tl_from.");\n\t}\n}\n'
         else:
           conversionType = v[0][0]
