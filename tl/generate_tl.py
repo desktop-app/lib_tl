@@ -271,6 +271,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   typesDict = {}
   TypesDict = {}
   typesList = []
+  TypeConstructors = {}
   boxed = {}
   funcsText = ''
   typesText = ''
@@ -429,7 +430,11 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         elif (ptype.find('<') >= 0):
           ptype = handleTemplate(ptype)
       prmsList.append(pname)
-      prms[pname] = normalizedName(ptype)
+      normalizedType = normalizedName(ptype)
+      if (normalizedType in TypeConstructors):
+        prms[pname] = TypeConstructors[normalizedType]['typeBare']
+      else:
+        prms[pname] = normalizedType
 
     if (isTemplate == '' and resType == 'X'):
       print('Bad response type "X" in "' + name +'" in line: ' + line)
@@ -628,6 +633,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         typesDict[restype] = []
       TypesDict[restype] = resType
       typesDict[restype].append([name, typeid, prmsList, prms, hasFlags, conditionsList, conditions, trivialConditions, isTemplate])
+
+      TypeConstructors[name] = {'typeBare': restype, 'typeBoxed': resType}
 
       consts = consts + 1
 
