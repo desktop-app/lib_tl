@@ -131,7 +131,7 @@ def addTextSerializeInit(typeList, typeData, idPrefix):
     v = typeData[restype]
     for data in v:
       name = data[0]
-      result += '\tresult.insert(' + idPrefix + name + ', Serialize_' + name + ');\n'
+      result += '\t\t{ ' + idPrefix + name + ', Serialize_' + name + ' },\n'
   return result
 
 def generate(scheme):
@@ -1137,10 +1137,10 @@ bool Serialize_core_message(DumpToTextBuffer &to, int32 stage, int32 lev, Types 
 \n'
 
     textSerializeInit += '\
-	result.insert(' + idPrefix + 'rpc_result, Serialize_rpc_result);\n\
-	result.insert(' + idPrefix + 'msg_container, Serialize_msg_container);\n\
-	result.insert(' + idPrefix + 'core_message, Serialize_core_message);\n'
-    textSerializeSource = '\n\
+	    { ' + idPrefix + 'rpc_result, Serialize_rpc_result },\n\
+	    { ' + idPrefix + 'msg_container, Serialize_msg_container },\n\
+	    { ' + idPrefix + 'core_message, Serialize_core_message },\n'
+    textSerializeSource = '\
 namespace {\n\
 \n\
 using Types = QVector<' + typeIdType + '>;\n\
@@ -1149,13 +1149,11 @@ using StagesFlags = QVector<int32>;\n\
 ' + textSerializeMethods + '\n\
 \n\
 using TextSerializer = bool (*)(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag);\n\
-using TextSerializers = QMap<' + typeIdType + ', TextSerializer>;\n\
 \n\
-QMap<' + typeIdType + ', TextSerializer> CreateTextSerializers() {\n\
-	auto result = QMap<' + typeIdType + ', TextSerializer>();\n\
-\n\
+base::flat_map<' + typeIdType + ', TextSerializer> CreateTextSerializers() {\n\
+	return {\n\
 ' + textSerializeInit + '\n\
-	return result;\n\
+	};\n\
 }\n\
 \n\
 } // namespace\n\
@@ -1189,9 +1187,9 @@ bool DumpToTextType(DumpToTextBuffer &to, const ' + primeType + ' *&from, const 
 		}\n\
 \n\
 		int32 lev = level + types.size() - 1;\n\
-		auto it = kSerializers.constFind(type);\n\
-		if (it != kSerializers.cend()) {\n\
-			if (!(*it.value())(to, stage, lev, types, vtypes, stages, flags, from, end, flag)) {\n\
+		auto it = kSerializers.find(type);\n\
+		if (it != kSerializers.end()) {\n\
+			if (!(*it->second)(to, stage, lev, types, vtypes, stages, flags, from, end, flag)) {\n\
 				to.error();\n\
 				return false;\n\
 			}\n\
@@ -1316,6 +1314,7 @@ struct DumpToTextBuffer;\n\
 #include "' + outputSerializationHeaderBasename + '"\n\
 #include "' + outputHeaderBasename + '"\n\
 #include "' + serializationInclude + '"\n\
+#include "base/flat_map.h"\n\
 \n\
 namespace MTP::details {\n\
 ' + textSerializeSource + '\n\
