@@ -32,12 +32,12 @@ struct Reader;
 
 template <>
 struct Writer<details::LengthCounter> final {
-	static void PutBytes(details::LengthCounter &to, const void *bytes, uint32 count) {
+	static void PutBytes(details::LengthCounter &to, const void *bytes, uint32 count) noexcept {
 		constexpr auto kPrime = sizeof(uint32);
 		const auto primes = (count / kPrime) + (count % kPrime ? 1 : 0);
 		to.length += primes * kPrime;
 	}
-	static void Put(details::LengthCounter &to, uint32 value) {
+	static void Put(details::LengthCounter &to, uint32 value) noexcept {
 		to.length += sizeof(uint32);
 	}
 };
@@ -46,7 +46,7 @@ template <
 	typename T,
 	typename = decltype(
 		std::declval<T>().write(std::declval<details::LengthCounter&>()))>
-uint32 count_length(const T &value) {
+uint32 count_length(const T &value) noexcept {
 	auto counter = details::LengthCounter();
 	value.write(counter);
 	return counter.length;
@@ -69,13 +69,13 @@ class int_type {
 public:
 	int32 v = 0;
 
-	int_type() = default;
+	constexpr int_type() noexcept = default;
 
-	uint32 type() const {
+	constexpr uint32 type() const noexcept {
 		return id_int;
 	}
 	template <typename Prime>
-	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_int) {
+	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_int) noexcept {
 		if (!Reader<Prime>::Has(1, from, end) || cons != id_int) {
 			return false;
 		}
@@ -83,17 +83,17 @@ public:
 		return true;
 	}
 	template <typename Accumulator>
-	void write(Accumulator &to) const {
+	void write(Accumulator &to) const noexcept {
 		Writer<Accumulator>::Put(to, static_cast<uint32>(v));
 	}
 
 private:
-	explicit int_type(int32 val) : v(val) {
+	explicit constexpr int_type(int32 val) noexcept : v(val) {
 	}
 
-	friend int_type make_int(int32 v);
+	friend constexpr int_type make_int(int32 v) noexcept;
 };
-inline int_type make_int(int32 v) {
+inline constexpr int_type make_int(int32 v) noexcept {
 	return int_type(v);
 }
 
@@ -105,15 +105,15 @@ public:
 		sizeof(Flags) == sizeof(int32),
 		"flags_type are allowed only wrapping int32 flag types!");
 
-	flags_type() = default;
-	flags_type(details::zero_flags_helper helper) {
+	constexpr flags_type() noexcept = default;
+	constexpr flags_type(details::zero_flags_helper helper) noexcept {
 	}
 
-	uint32 type() const {
+	constexpr uint32 type() const noexcept {
 		return id_flags;
 	}
 	template <typename Prime>
-	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_flags) {
+	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_flags) noexcept {
 		if (!Reader<Prime>::Has(1, from, end) || cons != id_flags) {
 			return false;
 		}
@@ -121,40 +121,40 @@ public:
 		return true;
 	}
 	template <typename Accumulator>
-	void write(Accumulator &to) const {
+	void write(Accumulator &to) const noexcept {
 		Writer<Accumulator>::Put(to, static_cast<uint32>(v.value()));
 	}
 
 private:
-	explicit flags_type(Flags val) : v(val) {
+	explicit constexpr flags_type(Flags val) noexcept : v(val) {
 	}
 
 	template <typename T>
-	friend flags_type<base::flags<T>> make_flags(base::flags<T> v);
+	friend constexpr flags_type<base::flags<T>> make_flags(base::flags<T> v) noexcept;
 
 	template <typename T, typename>
-	friend flags_type<base::flags<T>> make_flags(T v);
+	friend constexpr flags_type<base::flags<T>> make_flags(T v) noexcept;
 
 };
 
 template <typename T>
-inline flags_type<base::flags<T>> make_flags(base::flags<T> v) {
+inline constexpr flags_type<base::flags<T>> make_flags(base::flags<T> v) noexcept {
 	return flags_type<base::flags<T>>(v);
 }
 
 template <typename T, typename = std::enable_if_t<!std::is_same<T, int>::value>>
-inline flags_type<base::flags<T>> make_flags(T v) {
+inline constexpr flags_type<base::flags<T>> make_flags(T v) noexcept {
 	return flags_type<base::flags<T>>(v);
 }
 
-inline details::zero_flags_helper make_flags(void(details::zero_flags_helper::*)()) {
+inline constexpr details::zero_flags_helper make_flags(void(details::zero_flags_helper::*)()) noexcept {
 	return details::zero_flags_helper();
 }
 
-inline bool operator==(const int_type &a, const int_type &b) {
+inline constexpr bool operator==(const int_type &a, const int_type &b) noexcept {
 	return a.v == b.v;
 }
-inline bool operator!=(const int_type &a, const int_type &b) {
+inline constexpr bool operator!=(const int_type &a, const int_type &b) noexcept {
 	return a.v != b.v;
 }
 
@@ -162,13 +162,13 @@ class long_type {
 public:
 	uint64 v = 0;
 
-	long_type() = default;
+	constexpr long_type() noexcept = default;
 
-	uint32 type() const {
+	constexpr uint32 type() const noexcept {
 		return id_long;
 	}
 	template <typename Prime>
-	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_long) {
+	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_long) noexcept {
 		if (!Reader<Prime>::Has(2, from, end) || cons != id_long) {
 			return false;
 		}
@@ -177,25 +177,25 @@ public:
 		return true;
 	}
 	template <typename Accumulator>
-	void write(Accumulator &to) const {
+	void write(Accumulator &to) const noexcept {
 		Writer<Accumulator>::Put(to, static_cast<uint32>(v & 0xFFFFFFFFULL));
 		Writer<Accumulator>::Put(to, static_cast<uint32>(v >> 32));
 	}
 
 private:
-	explicit long_type(uint64 val) : v(val) {
+	explicit constexpr long_type(uint64 val) noexcept : v(val) {
 	}
 
-	friend long_type make_long(uint64 v);
+	friend constexpr long_type make_long(uint64 v) noexcept;
 };
-inline long_type make_long(uint64 v) {
+inline constexpr long_type make_long(uint64 v) noexcept {
 	return long_type(v);
 }
 
-inline bool operator==(const long_type &a, const long_type &b) {
+inline constexpr bool operator==(const long_type &a, const long_type &b) noexcept {
 	return a.v == b.v;
 }
-inline bool operator!=(const long_type &a, const long_type &b) {
+inline constexpr bool operator!=(const long_type &a, const long_type &b) noexcept {
 	return a.v != b.v;
 }
 
@@ -203,13 +203,13 @@ class int64_type {
 public:
 	int64 v = 0;
 
-	int64_type() = default;
+	constexpr int64_type() noexcept = default;
 
-	uint32 type() const {
+	constexpr uint32 type() const noexcept {
 		return id_long;
 	}
 	template <typename Prime>
-	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_long) {
+	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_long) noexcept {
 		if (!Reader<Prime>::Has(2, from, end) || cons != id_long) {
 			return false;
 		}
@@ -219,26 +219,26 @@ public:
 		return true;
 	}
 	template <typename Accumulator>
-	void write(Accumulator &to) const {
+	void write(Accumulator &to) const noexcept {
 		const auto data = static_cast<uint64>(v);
 		Writer<Accumulator>::Put(to, static_cast<uint32>(data & 0xFFFFFFFFULL));
 		Writer<Accumulator>::Put(to, static_cast<uint32>(data >> 32));
 	}
 
 private:
-	explicit int64_type(int64 val) : v(val) {
+	explicit constexpr int64_type(int64 val) noexcept : v(val) {
 	}
 
-	friend int64_type make_int64(int64 v);
+	friend constexpr int64_type make_int64(int64 v) noexcept;
 };
-inline int64_type make_int64(int64 v) {
+inline constexpr int64_type make_int64(int64 v) noexcept {
 	return int64_type(v);
 }
 
-inline bool operator==(const int64_type &a, const int64_type &b) {
+inline constexpr bool operator==(const int64_type &a, const int64_type &b) noexcept {
 	return a.v == b.v;
 }
-inline bool operator!=(const int64_type &a, const int64_type &b) {
+inline constexpr bool operator!=(const int64_type &a, const int64_type &b) noexcept {
 	return a.v != b.v;
 }
 
@@ -247,13 +247,13 @@ public:
 	uint64 l = 0;
 	uint64 h = 0;
 
-	int128_type() = default;
+	constexpr int128_type() noexcept = default;
 
-	uint32 type() const {
+	constexpr uint32 type() const noexcept {
 		return id_int128;
 	}
 	template <typename Prime>
-	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_int128) {
+	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_int128) noexcept {
 		if (!Reader<Prime>::Has(4, from, end) || cons != id_int128) {
 			return false;
 		}
@@ -264,7 +264,7 @@ public:
 		return true;
 	}
 	template <typename Accumulator>
-	void write(Accumulator &to) const {
+	void write(Accumulator &to) const noexcept {
 		Writer<Accumulator>::Put(to, static_cast<uint32>(l & 0xFFFFFFFFULL));
 		Writer<Accumulator>::Put(to, static_cast<uint32>(l >> 32));
 		Writer<Accumulator>::Put(to, static_cast<uint32>(h & 0xFFFFFFFFULL));
@@ -272,19 +272,19 @@ public:
 	}
 
 private:
-	explicit int128_type(uint64 low, uint64 high) : l(low), h(high) {
+	explicit constexpr int128_type(uint64 low, uint64 high) noexcept : l(low), h(high) {
 	}
 
-	friend int128_type make_int128(uint64 l, uint64 h);
+	friend constexpr int128_type make_int128(uint64 l, uint64 h) noexcept;
 };
-inline int128_type make_int128(uint64 l, uint64 h) {
+inline constexpr int128_type make_int128(uint64 l, uint64 h) noexcept {
 	return int128_type(l, h);
 }
 
-inline bool operator==(const int128_type &a, const int128_type &b) {
+inline constexpr bool operator==(const int128_type &a, const int128_type &b) noexcept {
 	return a.l == b.l && a.h == b.h;
 }
-inline bool operator!=(const int128_type &a, const int128_type &b) {
+inline constexpr bool operator!=(const int128_type &a, const int128_type &b) noexcept {
 	return a.l != b.l || a.h != b.h;
 }
 
@@ -293,38 +293,38 @@ public:
 	int128_type l;
 	int128_type h;
 
-	int256_type() = default;
+	constexpr int256_type() noexcept = default;
 
-	uint32 type() const {
+	constexpr uint32 type() const noexcept {
 		return id_int256;
 	}
 	template <typename Prime>
-	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_int256) {
+	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_int256) noexcept {
 		if (cons != id_int256) {
 			return false;
 		}
 		return l.read(from, end) && h.read(from, end);
 	}
 	template <typename Accumulator>
-	void write(Accumulator &to) const {
+	void write(Accumulator &to) const noexcept {
 		l.write(to);
 		h.write(to);
 	}
 
 private:
-	explicit int256_type(int128_type low, int128_type high) : l(low), h(high) {
+	explicit constexpr int256_type(int128_type low, int128_type high) noexcept : l(low), h(high) {
 	}
 
-	friend int256_type make_int256(const int128_type &l, const int128_type &h);
+	friend constexpr int256_type make_int256(const int128_type &l, const int128_type &h) noexcept;
 };
-inline int256_type make_int256(const int128_type &l, const int128_type &h) {
+inline constexpr int256_type make_int256(const int128_type &l, const int128_type &h) noexcept {
 	return int256_type(l, h);
 }
 
-inline bool operator==(const int256_type &a, const int256_type &b) {
+inline constexpr bool operator==(const int256_type &a, const int256_type &b) noexcept {
 	return a.l == b.l && a.h == b.h;
 }
-inline bool operator!=(const int256_type &a, const int256_type &b) {
+inline constexpr bool operator!=(const int256_type &a, const int256_type &b) noexcept {
 	return a.l != b.l || a.h != b.h;
 }
 
@@ -332,13 +332,13 @@ class double_type {
 public:
 	float64 v = 0.;
 
-	double_type() = default;
+	constexpr double_type() noexcept = default;
 
-	uint32 type() const {
+	constexpr uint32 type() const noexcept {
 		return id_double;
 	}
 	template <typename Prime>
-	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_double) {
+	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_double) noexcept {
 		if (!Reader<Prime>::Has(2, from, end) || cons != id_double) {
 			return false;
 		}
@@ -349,7 +349,7 @@ public:
 		return true;
 	}
 	template <typename Accumulator>
-	void write(Accumulator &to) const {
+	void write(Accumulator &to) const noexcept {
 		auto nonaliased = uint64();
 		static_assert(sizeof(v) == sizeof(nonaliased));
 		std::memcpy(&nonaliased, &v, sizeof(v));
@@ -358,19 +358,19 @@ public:
 	}
 
 private:
-	explicit double_type(float64 val) : v(val) {
+	explicit constexpr double_type(float64 val) noexcept : v(val) {
 	}
 
-	friend double_type make_double(float64 v);
+	friend constexpr double_type make_double(float64 v) noexcept;
 };
-inline double_type make_double(float64 v) {
+inline constexpr double_type make_double(float64 v) noexcept {
 	return double_type(v);
 }
 
-inline bool operator==(const double_type &a, const double_type &b) {
+inline constexpr bool operator==(const double_type &a, const double_type &b) noexcept {
 	return a.v == b.v;
 }
-inline bool operator!=(const double_type &a, const double_type &b) {
+inline constexpr bool operator!=(const double_type &a, const double_type &b) noexcept {
 	return a.v != b.v;
 }
 
@@ -379,13 +379,13 @@ using bytes_type = string_type;
 
 class string_type {
 public:
-	string_type() = default;
+	string_type() noexcept = default;
 
-	uint32 type() const {
+	uint32 type() const noexcept {
 		return id_string;
 	}
 	template <typename Prime>
-	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_string) {
+	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_string) noexcept {
 		if (!Reader<Prime>::Has(1, from, end) || cons != id_string) {
 			return false;
 		}
@@ -422,7 +422,7 @@ public:
 		return true;
 	}
 	template <typename Accumulator>
-	void write(Accumulator &to) const {
+	void write(Accumulator &to) const noexcept {
 		Expects(v.size() < 0x1000000);
 
 		const auto size = uint32(v.size());
@@ -451,7 +451,7 @@ public:
 	QByteArray v;
 
 private:
-	explicit string_type(QByteArray &&data) : v(std::move(data)) {
+	explicit string_type(QByteArray &&data) noexcept : v(std::move(data)) {
 	}
 
 	friend string_type make_string(const std::string &v);
@@ -527,13 +527,13 @@ inline QByteArray utf8(const string_type &v) {
 template <typename T>
 class vector_type {
 public:
-	vector_type() = default;
+	vector_type() noexcept = default;
 
-	uint32 type() const {
+	uint32 type() const noexcept {
 		return id_vector;
 	}
 	template <typename Prime>
-	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_vector) {
+	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_vector) noexcept {
 		if (!Reader<Prime>::Has(1, from, end) || cons != id_vector) {
 			return false;
 		}
@@ -549,7 +549,7 @@ public:
 		return true;
 	}
 	template <typename Accumulator>
-	void write(Accumulator &to) const {
+	void write(Accumulator &to) const noexcept {
 		Writer<Accumulator>::Put(to, static_cast<int32>(v.size()));
 		for (const auto &item : v) {
 			item.write(to);
@@ -559,7 +559,7 @@ public:
 	QVector<T> v;
 
 private:
-	explicit vector_type(QVector<T> &&data) : v(std::move(data)) {
+	explicit vector_type(QVector<T> &&data) noexcept : v(std::move(data)) {
 	}
 
 	template <typename U>
@@ -627,19 +627,19 @@ struct inner_helper {
 template <typename T>
 class conditional {
 public:
-	conditional() = default;
-	conditional(const T *value) : _value(value) {
+	constexpr conditional() noexcept = default;
+	constexpr conditional(const T *value) noexcept : _value(value) {
 	}
 
-	operator const T*() const {
+	constexpr operator const T*() const noexcept {
 		return _value;
 	}
-	const T *operator->() const {
+	constexpr const T *operator->() const noexcept {
 		Expects(_value != nullptr);
 
 		return _value;
 	}
-	const T &operator*() const {
+	constexpr const T &operator*() const noexcept {
 		Expects(_value != nullptr);
 
 		return *_value;
@@ -648,14 +648,14 @@ public:
 	template <
 		typename Inner = details::inner_helper::type<T>,
 		typename = std::enable_if_t<!std::is_same_v<Inner, void>>>
-	Inner value_or(details::repeat<Inner> fallback) const {
+	constexpr Inner value_or(details::repeat<Inner> fallback) const noexcept {
 		return _value ? _value->v : fallback;
 	}
 
 	template <
 		typename Inner = details::inner_helper::type<T>,
 		typename = std::enable_if_t<!std::is_same_v<Inner, void>>>
-	Inner value_or_empty() const {
+	constexpr Inner value_or_empty() const noexcept {
 		return _value ? _value->v : Inner();
 	}
 
