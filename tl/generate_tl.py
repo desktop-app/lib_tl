@@ -157,6 +157,37 @@ def generate(scheme):
     sys.exit(1)
   readAndGenerate(inputFiles, outputPath, scheme)
 
+def endsWithForTag(comments, tag, ending):
+  position = comments.find('@' + tag)
+  if (position < 0):
+    return False
+  tail = comments[(position + len(tag) + 1):]
+  till = tail.find('@')
+  line = tail[:till] if till >= 0 else tail
+  stripped = line.strip()
+  fullending = '; ' + ending.strip()
+  if len(stripped) < len(fullending):
+    return False
+  if stripped.endswith(fullending) or stripped.find(fullending + '.') >= 0 or stripped.find(fullending + ' if') >= 0:
+    return True
+  if line.find(ending) >= 0:
+    print('WARNING: Found "' + ending + '" in "' + stripped + '"')
+  return False
+
+def paramNameTag(name):
+  return 'param_description' if name == 'description' else name
+
+def isBotsOnlyLine(comments):
+  return endsWithForTag(comments, 'description', 'for bots only')
+
+def isBotsOnlyParam(comments, name):
+  return endsWithForTag(comments, paramNameTag(name), 'for bots only')
+
+def isNullableParam(comments, name):
+  if endsWithForTag(comments, paramNameTag(name), name + ' may be null'):
+    return True
+  return endsWithForTag(comments, paramNameTag(name), 'may be null')
+
 def readAndGenerate(inputFiles, outputPath, scheme):
   outputHeader = outputPath + '.h'
   outputSource = outputPath + '.cpp'
@@ -192,6 +223,13 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     return typePrefix + normalizedBareName(name)
   def fullDataName(name):
     return dataPrefix + normalizedName(name)
+  def optionalInVector(name):
+    templ = re.match(r'(.*?)([vV]ector<)([A-Za-z0-9_]+)>$', name)
+    if templ:
+      return templ.group(1) + templ.group(2) + 'std::optional<' + templ.group(3) + '>>';
+    else:
+      print('Bad optional vector: ' + name)
+      sys.exit(1)
   def handleTemplate(name, process = fullTypeName):
     templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._<>]+)>$', name)
     if (templ):
@@ -304,14 +342,17 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   conversionHeaderTo = ''
   conversionSourceFrom = ''
   conversionSourceTo = ''
+  comments = ''
 
   lines, layer, names = readInputs(inputFiles)
   inputNames = '\'' + '\', \''.join(names) + '\''
 
   for line in lines:
-    nocomment = re.match(r'^(.*?)//', line)
+    comment = ''
+    nocomment = re.match(r'^(.*?)//(.*?)$', line)
     if (nocomment):
       line = nocomment.group(1)
+      comment = nocomment.group(2)
     if (re.match(r'\-\-\-functions\-\-\-', line)):
       funcsNow = 1
       continue
@@ -319,6 +360,10 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       funcsNow = 0
       continue
     if (re.match(r'^\s*$', line)):
+      if not nocomment:
+        comments = ''
+      elif comment != '':
+        comments += ' ' + comment
       continue
     if line.strip() in skipLines:
       continue
@@ -398,7 +443,9 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     paramsList = params.strip().split(' ')
     prms = {}
     conditions = {}
-    trivialConditions = {}; # true type
+    trivialConditions = {} # true type
+    nullablePrms = {}
+    botsOnlyPrms = {}
     prmsList = []
     conditionsList = []
     isTemplate = hasFlags = hasTemplate = ''
@@ -415,6 +462,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         sys.exit(1)
       pname = pnametype.group(1)
       ptypewide = pnametype.group(2)
+      botsOnlyPrm = isBotsOnlyParam(comments, pname)
+      nullablePrm = not botsOnlyPrm and isNullableParam(comments, pname)
       if (re.match(r'^!([a-zA-Z]+)$', ptypewide)):
         if ('!' + hasTemplate == ptypewide):
           isTemplate = pname
@@ -422,18 +471,29 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         else:
           print('Bad template param name: "' + param + '" in line: ' + line)
           sys.exit(1)
+        if nullablePrm:
+          print('Template param should not be nullable: "' + param + '" in line: ' + line)
+          sys.exit(1)
       elif (ptypewide == '#'):
         hasFlags = pname
         if funcsNow:
           ptype = 'flags<' + fullTypeName(name) + '::Flags>'
         else:
           ptype = 'flags<' + fullDataName(name) + '::Flags>'
+        if nullablePrm:
+          print('Flags param should not be nullable: "' + param + '" in line: ' + line)
+          sys.exit(1)
       else:
         ptype = ptypewide
+        if botsOnlyPrm:
+          botsOnlyPrms[pname] = 1
         if (ptype.find('?') >= 0):
           pmasktype = re.match(r'([a-z_][a-z0-9_]*)\.([0-9]+)\?([A-Za-z0-9<>\._]+)', ptype)
           if (not pmasktype or pmasktype.group(1) != hasFlags):
             print('Bad param found: "' + param + '" in line: ' + line)
+            sys.exit(1)
+          if nullablePrm:
+            print('Conditional param should not be nullable: "' + param + '" in line: ' + line)
             sys.exit(1)
           ptype = pmasktype.group(3)
           if (ptype.find('<') >= 0):
@@ -447,10 +507,14 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             if (ptype == 'true'):
               trivialConditions[pname] = 1
         elif (ptype.find('<') >= 0):
+          if nullablePrm:
+            nullablePrms[pname] = 1
           if not readWriteSection:
             ptype = handleTemplate(ptype, fullBareTypeName)
           else:
             ptype = handleTemplate(ptype)
+        elif nullablePrm:
+          nullablePrms[pname] = 1
       prmsList.append(pname)
       if not readWriteSection:
         normalizedType = normalizedBareName(ptype)
@@ -503,8 +567,13 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             ptypeFull = paramType
           else:
             ptypeFull = fullTypeName(paramType)
-          if (paramType in ['int', 'Int', 'bool', 'Bool', 'flags<Flags>']):
+          if (paramType in ['int', 'Int', 'bool', 'Bool', 'flags<Flags>', 'long', 'int32', 'int53', 'int64', 'double']):
             prmsStr.append(ptypeFull + ' ' + paramName + '_')
+          elif paramName in nullablePrms:
+            if ptypeFull.find('<') >= 0:
+              prmsStr.append('const ' + optionalInVector(ptypeFull) + ' &' + paramName + '_')
+            else:
+              prmsStr.append('const std::optional<' + ptypeFull + '> &' + paramName + '_')
           else:
             prmsStr.append('const ' + ptypeFull + ' &' + paramName + '_')
 
@@ -586,11 +655,19 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
           elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
             conversionArguments.append('tl_to_simple(value.v' + k + '())')
           elif prmsTypeBare.find('<') >= 0:
-            conversionArguments.append('tl_to_vector(value.v' + k + '())')
-          elif len(typesDict[prmsTypeBare]) > 1:
-            conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare[0:1].upper() + prmsTypeBare[1:]) + '>(tl_to(value.v' + k + '()))')
+            if (k in nullablePrms):
+              conversionArguments.append('tl_to_vector_optional(value.v' + k + '())')
+            else:
+              conversionArguments.append('tl_to_vector(value.v' + k + '())')
           else:
-            conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare) + '>(tl_to(value.v' + k + '()))')
+            if (k in nullablePrms):
+              conversionValue = 'value.v' + k + '() ? tl_to(*value.v' + k + '()) : nullptr'
+            else:
+              conversionValue = 'tl_to(value.v' + k + '())'
+            if len(typesDict[prmsTypeBare]) > 1:
+              conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare[0:1].upper() + prmsTypeBare[1:]) + '>(' + conversionValue + ')')
+            else:
+              conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare) + '>(' + conversionValue + ')')
         conversionSourceTo += ', '.join(conversionArguments) + ');\n\
 \t};\n\
 }\n'
@@ -600,14 +677,26 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
             if (paramName in trivialConditions):
               continue
             paramType = prms[paramName]
+            ptypeFull = fullTypeName(paramType)
             if (paramName in conditions):
-              funcsText += '\t[[nodiscard]] tl::conditional<' + fullTypeName(paramType) + '> v' + paramName + '() const;\n'
-              methodBodies += 'tl::conditional<' + fullTypeName(paramType) + '> ' + fullTypeName(name) + '::v' + paramName + '() const {\n'
+              funcsText += '\t[[nodiscard]] tl::conditional<' + ptypeFull + '> v' + paramName + '() const;\n'
+              methodBodies += 'tl::conditional<' + ptypeFull + '> ' + fullTypeName(name) + '::v' + paramName + '() const {\n'
               methodBodies += '\treturn (_' + hasFlags + '.v & Flag::f_' + paramName + ') ? &_' + paramName + ' : nullptr;\n'
               methodBodies += '}\n'
+            elif (paramName in nullablePrms):
+              if (ptypeFull.find('<') >= 0):
+                funcsText += '\t[[nodiscard]] const ' + optionalInVector(ptypeFull) + ' &v' + paramName + '() const;\n'
+                methodBodies += 'const ' + optionalInVector(ptypeFull) + ' &' + fullTypeName(name) + '::v' + paramName + '() const {\n'
+                methodBodies += '\treturn _' + paramName + ';\n'
+                methodBodies += '}\n'
+              else:
+                funcsText += '\t[[nodiscard]] tl::conditional<' + ptypeFull + '> v' + paramName + '() const;\n'
+                methodBodies += 'tl::conditional<' + ptypeFull + '> ' + fullTypeName(name) + '::v' + paramName + '() const {\n'
+                methodBodies += '\treturn _' + paramName + ' ? &*_' + paramName + ' : nullptr;\n'
+                methodBodies += '}\n'
             else:
-              funcsText += '\t[[nodiscard]] const ' + fullTypeName(paramType) + ' &v' + paramName + '() const;\n'
-              methodBodies += 'const ' + fullTypeName(paramType) + ' &' + fullTypeName(name) + '::v' + paramName + '() const {\n'
+              funcsText += '\t[[nodiscard]] const ' + ptypeFull + ' &v' + paramName + '() const;\n'
+              methodBodies += 'const ' + ptypeFull + ' &' + fullTypeName(name) + '::v' + paramName + '() const {\n'
               methodBodies += '\treturn _' + paramName + ';\n'
               methodBodies += '}\n'
 
@@ -632,7 +721,13 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
             ptypeFull = paramType
           else:
             ptypeFull = fullTypeName(paramType)
-          funcsText += '\t' + ptypeFull + ' _' + paramName + ';\n'
+          if (paramName in nullablePrms):
+            if (ptypeFull.find('<') >= 0):
+              funcsText += '\t' + optionalInVector(ptypeFull) + ' _' + paramName + ';\n'
+            else:
+              funcsText += '\tstd::optional<' + ptypeFull + '> _' + paramName + ';\n'
+          else:
+            funcsText += '\t' + ptypeFull + ' _' + paramName + ';\n'
         funcsText += '\n'
 
       funcsText += '};\n'; # class ending
@@ -648,7 +743,7 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
         funcsList.append(restype)
         funcsDict[restype] = []
 #        TypesDict[restype] = resType
-      funcsDict[restype].append([name, typeid, prmsList, prms, hasFlags, conditionsList, conditions, trivialConditions, isTemplate])
+      funcsDict[restype].append([name, typeid, prmsList, prms, hasFlags, conditionsList, conditions, trivialConditions, isTemplate, nullablePrms, botsOnlyPrms])
     else:
       if (isTemplate != ''):
         print('Template types not allowed: "' + resType + '" in line: ' + line)
@@ -657,7 +752,7 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
         typesList.append(restype)
         typesDict[restype] = []
       TypesDict[restype] = resType
-      typesDict[restype].append([name, typeid, prmsList, prms, hasFlags, conditionsList, conditions, trivialConditions, isTemplate])
+      typesDict[restype].append([name, typeid, prmsList, prms, hasFlags, conditionsList, conditions, trivialConditions, isTemplate, nullablePrms, botsOnlyPrms])
 
       TypeConstructors[name] = {'typeBare': restype, 'typeBoxed': resType}
 
@@ -716,6 +811,9 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
             prmsList = data[2]
             prms = data[3]
             trivialConditions = data[7]
+            isTemplate = data[8]
+            nullablePrms = data[9]
+            botsOnlyPrms = data[10]
             conversionSourceFrom += '\tcase ' + conversionName(name) + '::ID: '
             if (len(prmsList) == 0):
               conversionSourceFrom += 'return ' + constructPrefix + name + '();\n'
@@ -725,15 +823,22 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
               conversionArguments = []
               for k in prmsList:
                 prmsTypeBare = prms[k]
+                ptypeFullBare = fullTypeName(prmsTypeBare)
                 if k in conditionsList:
                   print('Conversion with flags :(')
                   sys.exit(1)
                 elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
                   conversionArguments.append('tl_from_simple(specific->' + k + '_)')
                 elif prmsTypeBare.find('<') >= 0:
-                  conversionArguments.append('tl_from_vector<' + fullTypeName(prmsTypeBare) + '>(specific->' + k + '_)')
+                  if k in nullablePrms:
+                    conversionArguments.append('tl_from_vector_optional<' + ptypeFullBare + '>(specific->' + k + '_)')
+                  else:
+                    conversionArguments.append('tl_from_vector<' + ptypeFullBare + '>(specific->' + k + '_)')
                 else:
-                  conversionArguments.append('tl_from<' + fullTypeName(prmsTypeBare) + '>(specific->' + k + '_.get())')
+                  if k in nullablePrms:
+                    conversionArguments.append('specific->' + k + '_.get() ? std::make_optional(tl_from<' + ptypeFullBare + '>(specific->' + k + '_.get())) : std::nullopt')
+                  else:
+                    conversionArguments.append('tl_from<' + ptypeFullBare + '>(specific->' + k + '_.get())')
               conversionSourceFrom += ', '.join(conversionArguments) + ');\n'
               conversionSourceFrom += '\t} break;\n'
           conversionSourceFrom += '\tdefault: Unexpected("Type in ' + fullTypeName(restype) + ' tl_from.");\n\t}\n}\n'
@@ -750,6 +855,9 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
             name = data[0]
             prms = data[3]
             trivialConditions = data[7]
+            isTemplate = data[8]
+            nullablePrms = data[9]
+            botsOnlyPrms = data[10]
             if (len(prms) == len(trivialConditions)):
               conversionSourceTo += '\tcase ' + idPrefix + name + ': return new ' + conversionName(name) + '();\n'
             else:
@@ -770,6 +878,9 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
       conditionsList = data[5]
       conditions = data[6]
       trivialConditions = data[7]
+      isTemplate = data[8]
+      nullablePrms = data[9]
+      botsOnlyPrms = data[10]
 
       dataText = ''
       if (len(prms) > len(trivialConditions)):
@@ -838,13 +949,21 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
           if (paramName in trivialConditions):
             continue
           paramType = prms[paramName]
+          ptypeFull = fullTypeName(paramType)
 
-          if (paramType in ['int', 'Int', 'bool', 'Bool']):
-            prmsStr.append(fullTypeName(paramType) + ' ' + paramName + '_')
-            creatorParams.append(fullTypeName(paramType) + ' ' + paramName + '_')
+          if (paramType in ['int', 'Int', 'bool', 'Bool', 'flags<Flags>', 'long', 'int32', 'int53', 'int64', 'double']):
+            prmsStr.append(ptypeFull + ' ' + paramName + '_')
+            creatorParams.append(ptypeFull + ' ' + paramName + '_')
+          elif paramName in nullablePrms:
+            if (ptypeFull.find('<') >= 0):
+              prmsStr.append('const ' + optionalInVector(ptypeFull) + ' &' + paramName + '_')
+              creatorParams.append('const ' + optionalInVector(ptypeFull) + ' &' + paramName + '_')
+            else:
+              prmsStr.append('const std::optional<' + ptypeFull + '> &' + paramName + '_')
+              creatorParams.append('const std::optional<' + ptypeFull + '> &' + paramName + '_')
           else:
-            prmsStr.append('const ' + fullTypeName(paramType) + ' &' + paramName + '_')
-            creatorParams.append('const ' + fullTypeName(paramType) + ' &' + paramName + '_')
+            prmsStr.append('const ' + ptypeFull + ' &' + paramName + '_')
+            creatorParams.append('const ' + ptypeFull + ' &' + paramName + '_')
           creatorParamsList.append(paramName + '_')
           prmsInit.append('_' + paramName + '(' + paramName + '_)')
           if withType:
@@ -877,23 +996,42 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
             if (paramName in trivialConditions):
               continue
             paramType = prms[paramName]
+            ptypeFull = fullTypeName(paramType)
             if (paramName in conditions):
-              dataText += '\t[[nodiscard]] tl::conditional<' + fullTypeName(paramType) + '> v' + paramName + '() const;\n'
-              constructsBodies += 'tl::conditional<' + fullTypeName(paramType) + '> ' + fullDataName(name) + '::v' + paramName + '() const {\n'
+              dataText += '\t[[nodiscard]] tl::conditional<' + ptypeFull + '> v' + paramName + '() const;\n'
+              constructsBodies += 'tl::conditional<' + ptypeFull + '> ' + fullDataName(name) + '::v' + paramName + '() const {\n'
               constructsBodies += '\treturn (_' + hasFlags + '.v & Flag::f_' + paramName + ') ? &_' + paramName + ' : nullptr;\n'
               constructsBodies += '}\n'
+            elif (paramName in nullablePrms):
+              if (ptypeFull.find('<') >= 0):
+                dataText += '\t[[nodiscard]] const ' + optionalInVector(ptypeFull) + ' &v' + paramName + '() const;\n'
+                constructsBodies += 'const ' + optionalInVector(ptypeFull) + ' &' + fullDataName(name) + '::v' + paramName + '() const {\n'
+                constructsBodies += '\treturn _' + paramName + ';\n'
+                constructsBodies += '}\n'
+              else:
+                dataText += '\t[[nodiscard]] tl::conditional<' + ptypeFull + '> v' + paramName + '() const;\n'
+                constructsBodies += 'tl::conditional<' + ptypeFull + '> ' + fullDataName(name) + '::v' + paramName + '() const {\n'
+                constructsBodies += '\treturn _' + paramName + ' ? &*_' + paramName + ' : nullptr;\n'
+                constructsBodies += '}\n'
             else:
-              dataText += '\t[[nodiscard]] const ' + fullTypeName(paramType) + ' &v' + paramName + '() const;\n'
-              constructsBodies += 'const ' + fullTypeName(paramType) + ' &' + fullDataName(name) + '::v' + paramName + '() const {\n'
+              dataText += '\t[[nodiscard]] const ' + ptypeFull + ' &v' + paramName + '() const;\n'
+              constructsBodies += 'const ' + ptypeFull + ' &' + fullDataName(name) + '::v' + paramName + '() const {\n'
               constructsBodies += '\treturn _' + paramName + ';\n'
               constructsBodies += '}\n'
           dataText += '\n'
           dataText += 'private:\n'
           for paramName in prmsList: # fields declaration
+            paramType = prms[paramName]
+            ptypeFull = fullTypeName(paramType)
             if (paramName in trivialConditions):
               continue
-            paramType = prms[paramName]
-            dataText += '\t' + fullTypeName(paramType) + ' _' + paramName + ';\n'
+            elif (paramName in nullablePrms):
+              if (ptypeFull.find('<') >= 0):
+                dataText += '\t' + optionalInVector(ptypeFull) + ' _' + paramName + ';\n'
+              else:
+                dataText += '\tstd::optional<' + ptypeFull + '> _' + paramName + ';\n'
+            else:
+              dataText += '\t' + ptypeFull + ' _' + paramName + ';\n'
           dataText += '\n'
         newFast = 'new ' + fullDataName(name) + '()'
       else:
@@ -919,15 +1057,22 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
           conversionArguments = []
           for k in prmsList:
             prmsTypeBare = prms[k]
+            ptypeFullBare = fullTypeName(prmsTypeBare)
             if k in conditionsList:
               print('Conversion with flags :(')
               sys.exit(1)
             elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
               conversionArguments.append('tl_from_simple(specific->' + k + '_)')
             elif prmsTypeBare.find('<') >= 0:
-              conversionArguments.append('tl_from_vector<' + fullTypeName(prmsTypeBare) + '>(specific->' + k + '_)')
+              if k in nullablePrms:
+                conversionArguments.append('tl_from_vector_optional<' + ptypeFullBare + '>(specific->' + k + '_)')
+              else:
+                conversionArguments.append('tl_from_vector<' + ptypeFullBare + '>(specific->' + k + '_)')
             else:
-              conversionArguments.append('tl_from<' + fullTypeName(prmsTypeBare) + '>(specific->' + k + '_.get())')
+              if k in nullablePrms:
+                conversionArguments.append('specific->' + k + '_.get() ? std::make_optional(tl_from<' + ptypeFullBare + '>(specific->' + k + '_.get())) : std::nullopt')
+              else:
+                conversionArguments.append('tl_from<' + ptypeFullBare + '>(specific->' + k + '_.get())')
           conversionSourceFrom += ', '.join(conversionArguments) + ');\n'
           conversionSourceFrom += '}\n'
         conversionHeaderTo += conversionName(name) + ' *tl_to(const ' + fullDataName(name) + ' &value);\n'
@@ -942,11 +1087,19 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
           elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
             conversionArguments.append('tl_to_simple(value.v' + k + '())')
           elif prmsTypeBare.find('<') >= 0:
-            conversionArguments.append('tl_to_vector(value.v' + k + '())')
-          elif len(typesDict[prmsTypeBare]) > 1:
-            conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare[0:1].upper() + prmsTypeBare[1:]) + '>(tl_to(value.v' + k + '()))')
+            if (k in nullablePrms):
+              conversionArguments.append('tl_to_vector_optional(value.v' + k + '())')
+            else:
+              conversionArguments.append('tl_to_vector(value.v' + k + '())')
           else:
-            conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare) + '>(tl_to(value.v' + k + '()))')
+            if (k in nullablePrms):
+              conversionValue = 'value.v' + k + '() ? tl_to(*value.v' + k + '()) : nullptr'
+            else:
+              conversionValue = 'tl_to(value.v' + k + '())'
+            if len(typesDict[prmsTypeBare]) > 1:
+              conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare[0:1].upper() + prmsTypeBare[1:]) + '>(' + conversionValue + ')')
+            else:
+              conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare) + '>(' + conversionValue + ')')
         conversionSourceTo += ', '.join(conversionArguments) + ');\n}\n'
 
       switchLines += 'break;\n'
