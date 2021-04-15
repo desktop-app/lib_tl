@@ -844,6 +844,8 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
                   sys.exit(1)
                 elif k in botsOnlyPrms:
                   continue
+                elif prmsTypeBare == 'string':
+                  conversionArguments.append('tl_from_string(specific->' + k + '_)')
                 elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
                   conversionArguments.append('tl_from_simple(specific->' + k + '_)')
                 elif prmsTypeBare.find('<') >= 0:
@@ -1079,6 +1081,8 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
               sys.exit(1)
             elif k in botsOnlyPrms:
               continue
+            elif prmsTypeBare == 'string':
+              conversionArguments.append('tl_from_string(specific->' + k + '_)')
             elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
               conversionArguments.append('tl_from_simple(specific->' + k + '_)')
             elif prmsTypeBare.find('<') >= 0:
