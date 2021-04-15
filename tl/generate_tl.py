@@ -168,7 +168,7 @@ def endsWithForTag(comments, tag, ending):
   fullending = '; ' + ending.strip()
   if len(stripped) < len(fullending):
     return False
-  if stripped.endswith(fullending) or stripped.find(fullending + '.') >= 0 or stripped.find(fullending + ' if') >= 0:
+  if stripped.endswith(fullending) or stripped.find(fullending + '.') >= 0 or stripped.find(fullending + ';') >= 0 or stripped.find(fullending + ' if') >= 0:
     return True
   if line.find(ending) >= 0:
     print('WARNING: Found "' + ending + '" in "' + stripped + '"')
@@ -343,7 +343,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   conversionHeaderTo = ''
   conversionSourceFrom = ''
   conversionSourceTo = ''
-  comments = ''
+  accumulatedComments = ''
 
   lines, layer, names = readInputs(inputFiles)
   inputNames = '\'' + '\', \''.join(names) + '\''
@@ -362,9 +362,9 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       continue
     if (re.match(r'^\s*$', line)):
       if not nocomment:
-        comments = ''
+        accumulatedComments = ''
       elif comment != '':
-        comments += ' ' + comment
+        accumulatedComments += ' ' + comment
       continue
     if line.strip() in skipLines:
       continue
@@ -373,6 +373,12 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     if (not nametype):
       print('Bad line found: ' + line)
       sys.exit(1)
+
+    comments = accumulatedComments
+    accumulatedComments = ''
+
+    if isBotsOnlyLine(comments):
+      continue
 
     originalname = nametype.group(1)
     name = originalname
