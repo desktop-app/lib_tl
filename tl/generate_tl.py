@@ -160,12 +160,15 @@ def generate(scheme):
 def readAndGenerate(inputFiles, outputPath, scheme):
   outputHeader = outputPath + '.h'
   outputSource = outputPath + '.cpp'
-  outputConversionHeader = outputPath + '-conversion.h'
-  outputConversionSource = outputPath + '-conversion.cpp'
+  outputConversionHeaderFrom = outputPath + '-conversion-from.h'
+  outputConversionSourceFrom = outputPath + '-conversion-from.cpp'
+  outputConversionHeaderTo = outputPath + '-conversion-to.h'
+  outputConversionSourceTo = outputPath + '-conversion-to.cpp'
   outputSerializationHeader = outputPath + '-dump_to_text.h'
   outputSerializationSource = outputPath + '-dump_to_text.cpp'
   outputHeaderBasename = os.path.basename(outputHeader)
-  outputConversionHeaderBasename = os.path.basename(outputConversionHeader)
+  outputConversionHeaderFromBasename = os.path.basename(outputConversionHeaderFrom)
+  outputConversionHeaderToBasename = os.path.basename(outputConversionHeaderTo)
   outputSerializationHeaderBasename = os.path.basename(outputSerializationHeader)
 
   prefixes = scheme.get('prefixes', {})
@@ -175,20 +178,30 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   constructPrefix = prefixes.get('construct')
   def normalizedName(name):
     return name.replace('.', '_')
+  def normalizedBareName(name):
+    full = re.match(r'^([a-zA-Z0-9])+\.([A-Z][a-zA-Z0-9]+)$', name)
+    if (full):
+      return full.group(1) + '_' + full.group(2)[0:1].lower() + full.group(2)[1:]
+    elif name.find('.') >= 0:
+      print('Bad name: ' + name)
+      sys.exit(1)
+    return name[0:1].lower() + name[1:]
   def fullTypeName(name):
     return typePrefix + normalizedName(name)
+  def fullBareTypeName(name):
+    return typePrefix + normalizedBareName(name)
   def fullDataName(name):
     return dataPrefix + normalizedName(name)
-  def handleTemplate(name):
+  def handleTemplate(name, process = fullTypeName):
     templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._<>]+)>$', name)
     if (templ):
       vectemplate = templ.group(2)
       if (vectemplate.find('<') >= 0):
-        return templ.group(1) + fullTypeName(handleTemplate(vectemplate)) + '>'
+        return templ.group(1) + process(handleTemplate(vectemplate, process)) + '>'
       elif (re.match(r'^[A-Z]', vectemplate) or re.match(r'^[a-zA-Z0-9]+\.[A-Z]', vectemplate)):
-        return templ.group(1) + fullTypeName(vectemplate) + '>'
+        return templ.group(1) + process(vectemplate) + '>'
       elif (vectemplate in builtinTypes):
-        return templ.group(1) + fullTypeName(vectemplate) + '>'
+        return templ.group(1) + process(vectemplate) + '>'
       else:
         foundmeta = ''
         for metatype in typesDict:
@@ -199,7 +212,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           if (len(foundmeta) > 0):
             break
         if (len(foundmeta) > 0):
-          return templ.group(1) + fullTypeName(foundmeta) + '>'
+          return templ.group(1) + process(foundmeta) + '>'
         else:
           print('Bad vector param: ' + vectemplate)
           sys.exit(1)
@@ -237,7 +250,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   conversionInclude = conversionScheme.get('include') if writeConversion else ''
   conversionNamespace = conversionScheme.get('namespace') if writeConversion else ''
   conversionBuiltinTypes = conversionScheme.get('builtinAdditional', [])
-  conversionBuiltinInclude = conversionScheme.get('builtinInclude', '')
+  conversionBuiltinIncludeFrom = conversionScheme.get('builtinIncludeFrom', '')
+  conversionBuiltinIncludeTo = conversionScheme.get('builtinIncludeTo', '')
   def conversionName(name):
     return '::' + conversionNamespace + '::' + name
   def conversionTemplate(name, param):
@@ -286,8 +300,10 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   textSerializeMethods = ''
   forwards = ''
   forwTypedefs = ''
-  conversionHeader = ''
-  conversionSource = ''
+  conversionHeaderFrom = ''
+  conversionHeaderTo = ''
+  conversionSourceFrom = ''
+  conversionSourceTo = ''
 
   lines, layer, names = readInputs(inputFiles)
   inputNames = '\'' + '\', \''.join(names) + '\''
@@ -421,16 +437,25 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             sys.exit(1)
           ptype = pmasktype.group(3)
           if (ptype.find('<') >= 0):
-            ptype = handleTemplate(ptype)
+            if not readWriteSection:
+              ptype = handleTemplate(ptype, fullBareTypeName)
+            else:
+              ptype = handleTemplate(ptype)
           if (not pname in conditions):
             conditionsList.append(pname)
             conditions[pname] = pmasktype.group(2)
             if (ptype == 'true'):
               trivialConditions[pname] = 1
         elif (ptype.find('<') >= 0):
-          ptype = handleTemplate(ptype)
+          if not readWriteSection:
+            ptype = handleTemplate(ptype, fullBareTypeName)
+          else:
+            ptype = handleTemplate(ptype)
       prmsList.append(pname)
-      normalizedType = normalizedName(ptype)
+      if not readWriteSection:
+        normalizedType = normalizedBareName(ptype)
+      else:
+        normalizedType = normalizedName(ptype)
       if (normalizedType in TypeConstructors):
         prms[pname] = TypeConstructors[normalizedType]['typeBare']
       else:
@@ -536,7 +561,6 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           methodBodies += 'template <typename Accumulator>\n'
           methodBodies += 'void ' + fullTypeName(name) + '::write(Accumulator &to) const {\n'
         for k in prmsList:
-          v = prms[k]
           if (k in conditionsList):
             if (not k in trivialConditions):
               methodBodies += '\tif (_' + hasFlags + '.v & Flag::f_' + k + ') _' + k + '.write(to);\n'
@@ -548,31 +572,27 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           methodBodies += 'template void ' + fullTypeName(name) + '::write<::tl::details::LengthCounter>(::tl::details::LengthCounter &to) const;\n'
 
       if writeConversion:
-        conversionHeader += fullTypeName(name) + ' tl_from(' + conversionPointer(name) + ' &&value);\n'
-        conversionHeader += conversionPointer(name) + ' tl_to(const ' + fullTypeName(name) + ' &value);\n'
-        conversionSource += '\n\
-' + fullTypeName(name) + ' tl_from(' + conversionPointer(name) + ' &&value) {\n\
-\treturn ' + fullTypeName(name) + '('
+        conversionSourceTo += '\n\
+template <>\n\
+ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
+\treturn [value = std::move(request)]() -> ExternalRequest {\n\
+\t\treturn new ' + conversionName(name) + '('
         conversionArguments = []
         for k in prmsList:
-          if k in conditionsList:
-            print('Conversion with flags :(')
-            sys.exit(1)
-          else:
-            conversionArguments.append('tl_from(std::move(value->' + k + '_))')
-        conversionSource += ', '.join(conversionArguments) + ');\n\
-}\n\
-\n\
-' + conversionPointer(name) + ' tl_to(const '+  fullTypeName(name) + ' &value) {\n\
-\treturn ' + conversionMake(name) + '('
-        conversionArguments = []
-        for k in prmsList:
+          prmsTypeBare = prms[k]
           if (k in conditionsList):
             print('Conversion with flags :(')
             sys.exit(1)
+          elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
+            conversionArguments.append('tl_to_simple(value.v' + k + '())')
+          elif prmsTypeBare.find('<') >= 0:
+            conversionArguments.append('tl_to_vector(value.v' + k + '())')
+          elif len(typesDict[prmsTypeBare]) > 1:
+            conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare[0:1].upper() + prmsTypeBare[1:]) + '>(tl_to(value.v' + k + '()))')
           else:
-            conversionArguments.append('tl_to(value.v' + k + '())')
-        conversionSource += ', '.join(conversionArguments) + ');\n\
+            conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare) + '>(tl_to(value.v' + k + '()))')
+        conversionSourceTo += ', '.join(conversionArguments) + ');\n\
+\t};\n\
 }\n'
         if len(prmsList) > 0:
           funcsText += '\n'
@@ -595,7 +615,11 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         funcsText += '\n\tusing ResponseType = typename TQueryType::ResponseType;\n\n'
         inlineMethods += methodBodies
       else:
-        funcsText += '\n\tusing ResponseType = ' + fullTypeName(resType) + ';\n\n'; # method return type
+        # method return type
+        if not readWriteSection:
+          funcsText += '\n\tusing ResponseType = ' + fullTypeName(restype) + ';\n\n'
+        else:
+          funcsText += '\n\tusing ResponseType = ' + fullTypeName(resType) + ';\n\n'
         methods += methodBodies
 
       if (len(prms) > len(trivialConditions)):
@@ -612,11 +636,12 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         funcsText += '\n'
 
       funcsText += '};\n'; # class ending
-      if (isTemplate != ''):
-        funcsText += 'template <typename TQueryType>\n'
-        funcsText += 'using ' + fullTypeName(Name) + ' = tl::boxed<' + fullTypeName(name) + '<TQueryType>>;\n'
-      else:
-        funcsText += 'using ' + fullTypeName(Name) + ' = tl::boxed<' + fullTypeName(name) + '>;\n'
+      if readWriteSection:
+        if (isTemplate != ''):
+          funcsText += 'template <typename TQueryType>\n'
+          funcsText += 'using ' + fullTypeName(Name) + ' = tl::boxed<' + fullTypeName(name) + '<TQueryType>>;\n'
+        else:
+          funcsText += 'using ' + fullTypeName(Name) + ' = tl::boxed<' + fullTypeName(name) + '>;\n'
       funcs = funcs + 1
 
       if (not restype in funcsDict):
@@ -638,16 +663,18 @@ def readAndGenerate(inputFiles, outputPath, scheme):
 
       consts = consts + 1
 
-  for typeName in builtinTypes:
-    forwTypedefs += 'using ' + fullTypeName(typeName[:1].upper() + typeName[1:]) + ' = tl::boxed<' + fullTypeName(typeName) + '>;\n'
-  for typeName in builtinTemplateTypes:
-    forwTypedefs += 'template <typename T>\n'
-    forwTypedefs += 'using ' + fullTypeName(typeName[:1].upper() + typeName[1:]) + ' = tl::boxed<' + fullTypeName(typeName) + '<T>>;\n'
+  if readWriteSection:
+    for typeName in builtinTypes:
+      forwTypedefs += 'using ' + fullTypeName(typeName[:1].upper() + typeName[1:]) + ' = tl::boxed<' + fullTypeName(typeName) + '>;\n'
+    for typeName in builtinTemplateTypes:
+      forwTypedefs += 'template <typename T>\n'
+      forwTypedefs += 'using ' + fullTypeName(typeName[:1].upper() + typeName[1:]) + ' = tl::boxed<' + fullTypeName(typeName) + '<T>>;\n'
 
-  textSerializeMethods += addTextSerialize(typesList, typesDict, typesDict, idPrefix, primeType, boxed, dataPrefix)
-  textSerializeInit += addTextSerializeInit(typesList, typesDict, idPrefix) + '\n'
-  textSerializeMethods += addTextSerialize(funcsList, funcsDict, typesDict, idPrefix, primeType, boxed, typePrefix)
-  textSerializeInit += addTextSerializeInit(funcsList, funcsDict, idPrefix) + '\n'
+  if writeSerialization:
+    textSerializeMethods += addTextSerialize(typesList, typesDict, typesDict, idPrefix, primeType, boxed, dataPrefix)
+    textSerializeInit += addTextSerializeInit(typesList, typesDict, idPrefix) + '\n'
+    textSerializeMethods += addTextSerialize(funcsList, funcsDict, typesDict, idPrefix, primeType, boxed, typePrefix)
+    textSerializeInit += addTextSerializeInit(funcsList, funcsDict, idPrefix) + '\n'
 
   for restype in typesList:
     v = typesDict[restype]
@@ -660,7 +687,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     constructsBodies = ''
 
     forwards += 'class ' + fullTypeName(restype) + ';\n'
-    forwTypedefs += 'using ' + fullTypeName(resType) + ' = tl::boxed<' + fullTypeName(restype) + '>;\n'
+    if readWriteSection:
+      forwTypedefs += 'using ' + fullTypeName(resType) + ' = tl::boxed<' + fullTypeName(restype) + '>;\n'
 
     withType = (len(v) > 1)
     nullable = restype in nullableTypes
@@ -676,42 +704,62 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       if not restype in builtinTypes and not restype in conversionBuiltinTypes:
         if len(v) > 1:
           conversionType = resType
-          conversionHeader += fullTypeName(resType) + ' tl_from(' + conversionPointer(conversionType) + ' &&value);\n'
-          conversionSource += '\n' + fullTypeName(resType) + ' tl_from(' + conversionPointer(conversionType) + ' &&value) {\n'
+          conversionHeaderFrom += 'template <>\n' + fullTypeName(restype) + ' tl_from<' + fullTypeName(restype) + '>(ExternalResponse response);\n'
+          conversionSourceFrom += '\ntemplate <>\n' + fullTypeName(restype) + ' tl_from<' + fullTypeName(restype) + '>(ExternalResponse response) {\n'
           if nullable:
-            conversionSource += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n\n'
+            conversionSourceFrom += '\tif (!response) {\n\t\treturn nullptr;\n\t}\n\n'
           else:
-            conversionSource += '\tExpects(value != nullptr);\n\n'
-          conversionSource += '\tswitch (' + typeIdType + '(value->get_id())) {\n'
+            conversionSourceFrom += '\tExpects(response != nullptr);\n\n'
+          conversionSourceFrom += '\tswitch (response->get_id()) {\n'
           for data in v:
             name = data[0]
+            prmsList = data[2]
             prms = data[3]
             trivialConditions = data[7]
-            conversionSource += '\tcase uint32(' + conversionName(name) + '::ID): return tl_from(' + conversionMove(name) + '(std::move(value)));\n'
-          conversionSource += '\tdefault: Unexpected("Type in ' + fullTypeName(restype) + ' tl_from.");\n\t}\n}\n'
+            conversionSourceFrom += '\tcase ' + conversionName(name) + '::ID: '
+            if (len(prmsList) == 0):
+              conversionSourceFrom += 'return ' + constructPrefix + name + '();\n'
+            else:
+              conversionSourceFrom += '{\n\t\tconst auto specific = static_cast<const ' + conversionName(name) + '*>(response);\n'
+              conversionSourceFrom += '\t\treturn ' + constructPrefix + name + '('
+              conversionArguments = []
+              for k in prmsList:
+                prmsTypeBare = prms[k]
+                if k in conditionsList:
+                  print('Conversion with flags :(')
+                  sys.exit(1)
+                elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
+                  conversionArguments.append('tl_from_simple(specific->' + k + '_)')
+                elif prmsTypeBare.find('<') >= 0:
+                  conversionArguments.append('tl_from_vector<' + fullTypeName(prmsTypeBare) + '>(specific->' + k + '_)')
+                else:
+                  conversionArguments.append('tl_from<' + fullTypeName(prmsTypeBare) + '>(specific->' + k + '_.get())')
+              conversionSourceFrom += ', '.join(conversionArguments) + ');\n'
+              conversionSourceFrom += '\t} break;\n'
+          conversionSourceFrom += '\tdefault: Unexpected("Type in ' + fullTypeName(restype) + ' tl_from.");\n\t}\n}\n'
         else:
           conversionType = v[0][0]
 
-        conversionHeader += conversionPointer(conversionType) + ' tl_to(const ' + fullTypeName(restype) + ' &value);\n'
-        conversionSource += '\n' + conversionPointer(conversionType) + ' tl_to(const ' + fullTypeName(restype) + ' &value) {\n'
+        conversionHeaderTo += conversionName(conversionType) + ' *tl_to(const ' + fullTypeName(restype) + ' &value);\n'
+        conversionSourceTo += '\n' + conversionName(conversionType) + ' *tl_to(const ' + fullTypeName(restype) + ' &value) {\n'
         if withType:
-          conversionSource += '\tswitch (value.type()) {\n'
+          conversionSourceTo += '\tswitch (value.type()) {\n'
           if nullable:
-            conversionSource += '\tcase ' + typeIdType + '(0): return nullptr;\n'
+            conversionSourceTo += '\tcase ' + typeIdType + '(0): return nullptr;\n'
           for data in v:
             name = data[0]
             prms = data[3]
             trivialConditions = data[7]
             if (len(prms) == len(trivialConditions)):
-              conversionSource += '\tcase ' + idPrefix + name + ': return ' + conversionMake(name) + '();\n'
+              conversionSourceTo += '\tcase ' + idPrefix + name + ': return new ' + conversionName(name) + '();\n'
             else:
-              conversionSource += '\tcase ' + idPrefix + name + ': return tl_to(value.c_' + name + '());\n'
-          conversionSource += '\tdefault: Unexpected("Type in tl_to(' + fullTypeName(restype) + ').");\n\t}\n'
+              conversionSourceTo += '\tcase ' + idPrefix + name + ': return tl_to(value.c_' + name + '());\n'
+          conversionSourceTo += '\tdefault: Unexpected("Type in tl_to(' + fullTypeName(restype) + ').");\n\t}\n'
         else:
           if nullable:
-            conversionSource += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n'
-          conversionSource += '\treturn tl_to(value.c_' + v[0][0] + '());\n'
-        conversionSource += '}\n'
+            conversionSourceTo += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n'
+          conversionSourceTo += '\treturn tl_to(value.c_' + v[0][0] + '());\n'
+        conversionSourceTo += '}\n'
 
     for data in v:
       name = data[0]
@@ -857,30 +905,49 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         constructsBodies += '}\n'
 
       if writeConversion and not restype in builtinTypes and not restype in conversionBuiltinTypes:
-        conversionHeader += fullTypeName(restype) + ' tl_from(' + conversionPointer(name) + ' &&value);\n'
-        conversionHeader += conversionPointer(name) + ' tl_to(const ' + fullDataName(name) + ' &value);\n'
-        conversionSource += '\n' + fullTypeName(restype) + ' tl_from(' + conversionPointer(name) + ' &&value) {\n'
-        if nullable:
-          conversionSource += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n\n'
-        conversionSource += '\treturn ' + constructPrefix + normalizedName(name) + '('
-        conversionArguments = []
-        for k in prmsList:
-          if k in conditionsList:
-            print('Conversion with flags :(')
-            sys.exit(1)
+        if (len(v) == 1):
+          conversionHeaderFrom += 'template <>\n' + fullTypeName(restype) + ' tl_from<' + fullTypeName(restype) + '>(ExternalResponse response);\n'
+          conversionSourceFrom += '\ntemplate <>\n' + fullTypeName(restype) + ' tl_from<' + fullTypeName(restype) + '>(ExternalResponse response) {\n'
+          if nullable:
+            conversionSourceFrom += '\tif (!response) {\n\t\treturn nullptr;\n\t}\n\n'
           else:
-            conversionArguments.append('tl_from(std::move(value->' + k + '_))')
-        conversionSource += ', '.join(conversionArguments) + ');\n'
-        conversionSource += '}\n\n' + conversionPointer(name) + ' tl_to(const ' + fullDataName(name) + ' &value) {\n'
-        conversionSource += '\treturn ' + conversionMake(name) + '('
+            conversionSourceFrom += '\tExpects(response != nullptr);\n'
+            conversionSourceFrom += '\tExpects(response->get_id() == ' + conversionName(name) + '::ID);\n\n'
+          if (len(prmsList) > 0):
+            conversionSourceFrom += '\tconst auto specific = static_cast<const ' + conversionName(name) + '*>(response);\n'
+          conversionSourceFrom += '\treturn ' + constructPrefix + normalizedName(name) + '('
+          conversionArguments = []
+          for k in prmsList:
+            prmsTypeBare = prms[k]
+            if k in conditionsList:
+              print('Conversion with flags :(')
+              sys.exit(1)
+            elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
+              conversionArguments.append('tl_from_simple(specific->' + k + '_)')
+            elif prmsTypeBare.find('<') >= 0:
+              conversionArguments.append('tl_from_vector<' + fullTypeName(prmsTypeBare) + '>(specific->' + k + '_)')
+            else:
+              conversionArguments.append('tl_from<' + fullTypeName(prmsTypeBare) + '>(specific->' + k + '_.get())')
+          conversionSourceFrom += ', '.join(conversionArguments) + ');\n'
+          conversionSourceFrom += '}\n'
+        conversionHeaderTo += conversionName(name) + ' *tl_to(const ' + fullDataName(name) + ' &value);\n'
+        conversionSourceTo += '\n' + conversionName(name) + ' *tl_to(const ' + fullDataName(name) + ' &value) {\n'
+        conversionSourceTo += '\treturn new ' + conversionName(name) + '('
         conversionArguments = []
         for k in prmsList:
+          prmsTypeBare = prms[k]
           if (k in conditionsList):
             print('Conversion with flags :(')
             sys.exit(1)
+          elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
+            conversionArguments.append('tl_to_simple(value.v' + k + '())')
+          elif prmsTypeBare.find('<') >= 0:
+            conversionArguments.append('tl_to_vector(value.v' + k + '())')
+          elif len(typesDict[prmsTypeBare]) > 1:
+            conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare[0:1].upper() + prmsTypeBare[1:]) + '>(tl_to(value.v' + k + '()))')
           else:
-            conversionArguments.append('tl_to(value.v' + k + '())')
-        conversionSource += ', '.join(conversionArguments) + ');\n}\n'
+            conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare) + '>(tl_to(value.v' + k + '()))')
+        conversionSourceTo += ', '.join(conversionArguments) + ');\n}\n'
 
       switchLines += 'break;\n'
       dataText += '};\n'; # class ending
@@ -1059,7 +1126,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     flagOperators += flagDeclarations
     factories += creatorsDeclarations
     methods += creatorsBodies
-    typesText += 'using ' + fullTypeName(resType) + ' = tl::boxed<' + fullTypeName(restype) + '>;\n'; # boxed type definition
+    if readWriteSection:
+      typesText += 'using ' + fullTypeName(resType) + ' = tl::boxed<' + fullTypeName(restype) + '>;\n'; # boxed type definition
 
   flagOperators += '\n'
 
@@ -1203,6 +1271,9 @@ bool DumpToTextType(DumpToTextBuffer &to, const ' + primeType + ' *&from, const 
 	return true;\n\
 }\n'
 
+  if forwTypedefs != '':
+    forwTypedefs = '// Boxed types definitions\n' + forwTypedefs + '\n'
+
   # module itself
   header = '\
 // WARNING! All changes made in this file will be lost!\n\
@@ -1230,8 +1301,7 @@ enum {\n\
 \n\
 // Type forward declarations\n\
 ' + forwards + '\n\
-// Boxed types definitions\n\
-' + forwTypedefs + '\n\
+' + forwTypedefs + '\
 // Type classes definitions\n\
 ' + typesText + '\n\
 // Type constructors with data\n\
@@ -1268,7 +1338,7 @@ public:\n\
 ' + methods + '\n\
 ' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '')
 
-  conversionHeader = '\
+  conversionHeaderFrom = '\
 // WARNING! All changes made in this file will be lost!\n\
 // Created from ' + inputNames + ' by \'generate.py\'\n\
 //\n\
@@ -1278,18 +1348,42 @@ public:\n\
 #include "' + outputHeaderBasename + '"\n\
 \n\
 ' + ('namespace ' + globalNamespace + ' {\n\n' if globalNamespace != '' else '') + '\
-' + conversionHeader + '\n\
+' + conversionHeaderFrom + '\n\
 ' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '') +'\
-' + ('\n#include "' + conversionBuiltinInclude + '"\n' if conversionBuiltinInclude != '' else '')
+' + ('\n#include "' + conversionBuiltinIncludeFrom + '"\n' if conversionBuiltinIncludeFrom != '' else '')
 
-  conversionSource = '\
+  conversionHeaderTo = '\
 // WARNING! All changes made in this file will be lost!\n\
 // Created from ' + inputNames + ' by \'generate.py\'\n\
 //\n\
-#include "' + outputConversionHeaderBasename + '"\n\
+#pragma once\n\
+\n\
+#include "' + conversionInclude + '"\n\
+#include "' + outputHeaderBasename + '"\n\
+\n\
+' + ('namespace ' + globalNamespace + ' {\n\n' if globalNamespace != '' else '') + '\
+' + conversionHeaderTo + '\n\
+' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '') +'\
+' + ('\n#include "' + conversionBuiltinIncludeTo + '"\n' if conversionBuiltinIncludeTo != '' else '')
+
+  conversionSourceFrom = '\
+// WARNING! All changes made in this file will be lost!\n\
+// Created from ' + inputNames + ' by \'generate.py\'\n\
+//\n\
+#include "' + outputConversionHeaderFromBasename + '"\n\
 \n\
 ' + ('namespace ' + globalNamespace + ' {\n' if globalNamespace != '' else '') + '\
-' + conversionSource + '\n\
+' + conversionSourceFrom + '\n\
+' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '')
+
+  conversionSourceTo = '\
+// WARNING! All changes made in this file will be lost!\n\
+// Created from ' + inputNames + ' by \'generate.py\'\n\
+//\n\
+#include "' + outputConversionHeaderToBasename + '"\n\
+\n\
+' + ('namespace ' + globalNamespace + ' {\n' if globalNamespace != '' else '') + '\
+' + conversionSourceTo + '\n\
 ' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '')
 
   serializationHeader = '\
@@ -1338,20 +1432,37 @@ namespace MTP::details {\n\
 
   if writeConversion:
     alreadyHeader = ''
-    if os.path.isfile(outputConversionHeader):
-      with open(outputConversionHeader, 'r') as already:
+    if os.path.isfile(outputConversionHeaderFrom):
+      with open(outputConversionHeaderFrom, 'r') as already:
         alreadyHeader = already.read()
-    if alreadyHeader != conversionHeader:
-      with open(outputConversionHeader, 'w') as out:
-        out.write(conversionHeader)
+    if alreadyHeader != conversionHeaderFrom:
+      with open(outputConversionHeaderFrom, 'w') as out:
+        out.write(conversionHeaderFrom)
+
+  if writeConversion:
+    alreadyHeader = ''
+    if os.path.isfile(outputConversionHeaderTo):
+      with open(outputConversionHeaderTo, 'r') as already:
+        alreadyHeader = already.read()
+    if alreadyHeader != conversionHeaderTo:
+      with open(outputConversionHeaderTo, 'w') as out:
+        out.write(conversionHeaderTo)
 
     alreadySource = ''
-    if os.path.isfile(outputConversionSource):
-      with open(outputConversionSource, 'r') as already:
+    if os.path.isfile(outputConversionSourceFrom):
+      with open(outputConversionSourceFrom, 'r') as already:
         alreadySource = already.read()
-    if alreadySource != conversionSource:
-      with open(outputConversionSource, 'w') as out:
-        out.write(conversionSource)
+    if alreadySource != conversionSourceFrom:
+      with open(outputConversionSourceFrom, 'w') as out:
+        out.write(conversionSourceFrom)
+
+    alreadySource = ''
+    if os.path.isfile(outputConversionSourceTo):
+      with open(outputConversionSourceTo, 'r') as already:
+        alreadySource = already.read()
+    if alreadySource != conversionSourceTo:
+      with open(outputConversionSourceTo, 'w') as out:
+        out.write(conversionSourceTo)
 
   if writeSerialization:
     alreadyHeader = ''
