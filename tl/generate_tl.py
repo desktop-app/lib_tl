@@ -1275,6 +1275,13 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
       methods += 'template void ' + fullTypeName(restype) + '::write<::tl::details::LengthCounter>(::tl::details::LengthCounter &to) const;\n'
 
     typesText += '\n\tusing ResponseType = void;\n'; # no response types declared
+    if writeConversion:
+      if withData and not withType:
+        for data in v:
+          name = data[0]
+          typesText += '\tusing SingleDataType = ' + fullDataName(name) + ';\n'
+      else:
+        typesText += '\tusing SingleDataType = NotSingleDataTypePlaceholder;\n';
 
     typesText += '\nprivate:\n'; # private constructors
     if (withType): # by-type-id constructor
