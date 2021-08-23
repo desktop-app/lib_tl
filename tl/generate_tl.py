@@ -285,6 +285,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   bufferType = primitiveTypeNames.get('buffer', '')
 
   writeConversion = 'conversion' in scheme
+  optimizeSingleData = 'optimizeSingleData' in scheme
   conversionScheme = scheme.get('conversion', {})
   conversionInclude = conversionScheme.get('include') if writeConversion else ''
   conversionNamespace = conversionScheme.get('namespace') if writeConversion else ''
@@ -943,6 +944,8 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
 
       switchLines += '\tcase ' + idPrefix + name + ': '; # for by-type-id type constructor
       getters += '\t[[nodiscard]] const ' + fullDataName(name) + ' &c_' + name + '() const;\n'; # const getter
+      if optimizeSingleData and withData and not withType:
+        getters += '\t[[nodiscard]] const ' + fullDataName(name) + ' &data() const;\n';
       visitor += '\tcase ' + idPrefix + name + ': return base::match_method(c_' + name + '(), std::forward<Method>(method), std::forward<Methods>(methods)...);\n'
 
       forwards += 'class ' + fullDataName(name) + ';\n'; # data class forward declaration
@@ -956,6 +959,11 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
           constructsBodies += '\tExpects(_type == ' + idPrefix + name + ');\n\n'
         constructsBodies += '\treturn queryData<' + fullDataName(name) + '>();\n'
         constructsBodies += '}\n'
+
+        if optimizeSingleData and withData and not withType:
+          constructsBodies += 'const ' + fullDataName(name) + ' &' + fullTypeName(restype) + '::data() const {\n'
+          constructsBodies += '\treturn queryData<' + fullDataName(name) + '>();\n'
+          constructsBodies += '}\n'
 
         constructsText += '\texplicit ' + fullTypeName(restype) + '(const ' + fullDataName(name) + ' *data);\n'; # by-data type constructor
         constructsBodies += fullTypeName(restype) + '::' + fullTypeName(restype) + '(const ' + fullDataName(name) + ' *data) : type_owner(data)'
@@ -1275,7 +1283,7 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
       methods += 'template void ' + fullTypeName(restype) + '::write<::tl::details::LengthCounter>(::tl::details::LengthCounter &to) const;\n'
 
     typesText += '\n\tusing ResponseType = void;\n'; # no response types declared
-    if writeConversion:
+    if optimizeSingleData:
       if withData and not withType:
         for data in v:
           name = data[0]
