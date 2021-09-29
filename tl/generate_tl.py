@@ -150,11 +150,9 @@ def generate(scheme):
       inputFiles.append(arg)
 
   if len(inputFiles) == 0:
-    print('Input file required.')
-    sys.exit(1)
+    raise ValueError('Input file required.')
   if outputPath == '':
-    print('Output path required.')
-    sys.exit(1)
+    raise ValueError('Output path required.')
   readAndGenerate(inputFiles, outputPath, scheme)
 
 def endsWithForTag(comments, tag, ending):
@@ -215,8 +213,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     if (full):
       return full.group(1) + '_' + full.group(2)[0:1].lower() + full.group(2)[1:]
     elif name.find('.') >= 0:
-      print('Bad name: ' + name)
-      sys.exit(1)
+      raise ValueError('Bad name: ' + name)
     return name[0:1].lower() + name[1:]
   def fullTypeName(name):
     return typePrefix + normalizedName(name)
@@ -229,8 +226,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     if templ:
       return templ.group(1) + templ.group(2) + 'std::optional<' + templ.group(3) + '>>';
     else:
-      print('Bad optional vector: ' + name)
-      sys.exit(1)
+      raise ValueError('Bad optional vector: ' + name)
   def handleTemplate(name, process = fullTypeName):
     templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._<>]+)>$', name)
     if (templ):
@@ -253,11 +249,9 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         if (len(foundmeta) > 0):
           return templ.group(1) + process(foundmeta) + '>'
         else:
-          print('Bad vector param: ' + vectemplate)
-          sys.exit(1)
+          raise ValueError('Bad vector param: ' + vectemplate)
     else:
-      print('Bad template type: ' + name)
-      sys.exit(1)
+      raise ValueError('Bad template type: ' + name)
 
   namespaces = scheme.get('namespaces')
   globalNamespace = namespaces.get('global', '')
@@ -309,8 +303,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
 
   if primeType == '' or bufferType == '':
     if readWriteSection or writeSerialization:
-      print('Required types not provided.')
-      sys.exit(1)
+      raise ValueError('Required types not provided.')
 
   def isBuiltinType(name):
     return name in builtinTypes or name in builtinTemplateTypes
@@ -372,8 +365,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
 
     nametype = re.match(r'([a-zA-Z\.0-9_]+)(#[0-9a-f]+)?([^=]*)=\s*([a-zA-Z\.<>0-9_]+);', line)
     if (not nametype):
-      print('Bad line found: ' + line)
-      sys.exit(1)
+      raise ValueError('Bad line found: ' + line)
 
     comments = accumulatedComments
     accumulatedComments = ''
@@ -434,14 +426,12 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       if (parts):
         restype = parts.group(1).replace('.', '_') + '_' + parts.group(2)[0:1].lower() + parts.group(2)[1:]
       else:
-        print('Bad result type name with dot: ' + restype)
-        sys.exit(1)
+        raise ValueError('Bad result type name with dot: ' + restype)
     else:
       if (re.match(r'^[A-Z]', restype)):
         restype = restype[:1].lower() + restype[1:]
       else:
-        print('Bad result type name: ' + restype)
-        sys.exit(1)
+        raise ValueError('Bad result type name: ' + restype)
 
     boxed[resType] = restype
     boxed[Name] = name
@@ -467,8 +457,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         continue
       pnametype = re.match(r'([a-zA-Z_][a-zA-Z0-9_]*):([A-Za-z0-9<>\._]+|![a-zA-Z]+|\#|[a-z_][a-z0-9_]*\.[0-9]+\?[A-Za-z0-9<>\._]+)$', param)
       if (not pnametype):
-        print('Bad param found: "' + param + '" in line: ' + line)
-        sys.exit(1)
+        raise ValueError('Bad param found: "' + param + '" in line: ' + line)
       pname = pnametype.group(1)
       ptypewide = pnametype.group(2)
       botsOnlyPrm = isBotsOnlyParam(comments, pname)
@@ -479,11 +468,9 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           isTemplate = pname
           ptype = 'TQueryType'
         else:
-          print('Bad template param name: "' + param + '" in line: ' + line)
-          sys.exit(1)
+          raise ValueError('Bad template param name: "' + param + '" in line: ' + line)
         if nullablePrm or nullableVector:
-          print('Template param should not be nullable: "' + param + '" in line: ' + line)
-          sys.exit(1)
+          raise ValueError('Template param should not be nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
       elif (ptypewide == '#'):
         hasFlags = pname
         if funcsNow:
@@ -491,8 +478,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         else:
           ptype = 'flags<' + fullDataName(name) + '::Flags>'
         if nullablePrm or nullableVector:
-          print('Flags param should not be nullable: "' + param + '" in line: ' + line)
-          sys.exit(1)
+          raise ValueError('Flags param should not be nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
       else:
         ptype = ptypewide
         if botsOnlyPrm:
@@ -500,11 +486,9 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         if (ptype.find('?') >= 0):
           pmasktype = re.match(r'([a-z_][a-z0-9_]*)\.([0-9]+)\?([A-Za-z0-9<>\._]+)', ptype)
           if (not pmasktype or pmasktype.group(1) != hasFlags):
-            print('Bad param found: "' + param + '" in line: ' + line)
-            sys.exit(1)
+            raise ValueError('Bad param found: "' + param + '" in line: ' + line)
           if nullablePrm or nullableVector:
-            print('Conditional param should not be nullable: "' + param + '" in line: ' + line)
-            sys.exit(1)
+            raise ValueError('Conditional param should not be nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
           ptype = pmasktype.group(3)
           if (ptype.find('<') >= 0):
             if not readWriteSection:
@@ -518,8 +502,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
               trivialConditions[pname] = 1
         elif (ptype.find('<') >= 0):
           if nullablePrm:
-            print('Vector param should not be nullable: "' + param + '" in line: ' + line)
-            sys.exit(1)
+            raise ValueError('Vector param should not be nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
           if nullableVector:
             nullableVectors[pname] = 1
           if not readWriteSection:
@@ -527,8 +510,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           else:
             ptype = handleTemplate(ptype)
         elif nullableVector:
-          print('Non-vector param should not be vector-nullable: "' + param + '" in line: ' + line)
-          sys.exit(1)
+          raise ValueError('Non-vector param should not be vector-nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
         elif nullablePrm:
           nullablePrms[pname] = 1
       prmsList.append(pname)
@@ -542,8 +524,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         prms[pname] = normalizedType
 
     if (isTemplate == '' and resType == 'X'):
-      print('Bad response type "X" in "' + name +'" in line: ' + line)
-      sys.exit(1)
+      raise ValueError('Bad response type "X" in "' + name +'" in line: ' + line)
 
     if funcsNow:
       methodBodies = ''
@@ -665,8 +646,7 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
         for k in prmsList:
           prmsTypeBare = prms[k]
           if (k in conditionsList):
-            print('Conversion with flags :(')
-            sys.exit(1)
+            raise ValueError('Conversion with flags :(')
           elif k in botsOnlyPrms:
             conversionArguments.append('{}')
           elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
@@ -841,8 +821,7 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
                 prmsTypeBare = prms[k]
                 ptypeFullBare = fullTypeName(prmsTypeBare)
                 if k in conditionsList:
-                  print('Conversion with flags :(')
-                  sys.exit(1)
+                  raise ValueError('Conversion with flags :(')
                 elif k in botsOnlyPrms:
                   continue
                 elif prmsTypeBare == 'string':
@@ -1085,8 +1064,7 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
             prmsTypeBare = prms[k]
             ptypeFullBare = fullTypeName(prmsTypeBare)
             if k in conditionsList:
-              print('Conversion with flags :(')
-              sys.exit(1)
+              raise ValueError('Conversion with flags :(')
             elif k in botsOnlyPrms:
               continue
             elif prmsTypeBare == 'string':
@@ -1112,8 +1090,7 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
         for k in prmsList:
           prmsTypeBare = prms[k]
           if (k in conditionsList):
-            print('Conversion with flags :(')
-            sys.exit(1)
+            raise ValueError('Conversion with flags :(')
           elif k in botsOnlyPrms:
             conversionArguments.append('{}')
           elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
@@ -1187,11 +1164,9 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
 
     if nullable:
       if not withType and not withData:
-        print('No way to make a nullable non-data-owner non-type-distinct type')
-        sys.exit(1)
+        raise ValueError('No way to make a nullable non-data-owner non-type-distinct type')
       elif readWriteSection:
-        print('No way to make read-write code for a nullable type')
-        sys.exit(1)
+        raise ValueError('No way to make read-write code for a nullable type')
 
     forwards += '\n'
 
@@ -1332,13 +1307,11 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
   # But as long as flags don't collide this is not a problem.
   #
   #    if (not flag in parentFlagsCheck[parentName]):
-  #      print('Flag ' + flag + ' not found in ' + parentName + ' which should be a flags-parent of ' + childName)
-  #      sys.exit(1)
+  #      raise ValueError('Flag ' + flag + ' not found in ' + parentName + ' which should be a flags-parent of ' + childName)
   #
       if (flag in parentFlagsCheck[parentName]):
         if (parentFlagsCheck[childName][flag] != parentFlagsCheck[parentName][flag]):
-          print('Flag ' + flag + ' has different value in ' + parentName + ' which should be a flags-parent of ' + childName)
-          sys.exit(1)
+          raise ValueError('Flag ' + flag + ' has different value in ' + parentName + ' which should be a flags-parent of ' + childName)
       else:
         parentFlagsCheck[parentName][flag] = parentFlagsCheck[childName][flag]
     flagOperators += 'inline ' + parentName + '::Flags mtpCastFlags(' + childName + '::Flags flags) { return static_cast<' + parentName + '::Flag>(flags.value()); }\n'
