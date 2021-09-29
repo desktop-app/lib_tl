@@ -168,7 +168,7 @@ def endsWithForTag(comments, tag, ending):
   fullending = '; ' + ending.strip()
   if len(stripped) < len(fullending):
     return False
-  if stripped.endswith(fullending) or stripped.find(fullending + '.') >= 0 or stripped.find(fullending + ';') >= 0 or stripped.find(fullending + ' if') >= 0:
+  if stripped.endswith(fullending) or stripped.find(fullending + '.') >= 0 or stripped.find(fullending + ';') >= 0 or stripped.find(fullending + ' if') >= 0 or stripped.find(fullending + ' to') >= 0 or stripped.find(fullending + ' otherwise') >= 0:
     return True
   if line.find(ending) >= 0:
     print('WARNING: Found "' + ending + '" in "' + stripped + '"')
@@ -187,7 +187,7 @@ def isNullableVector(comments, name):
   return name.endswith('s') and endsWithForTag(comments, paramNameTag(name), name + ' may be null')
 
 def isNullableParam(comments, name):
-  return endsWithForTag(comments, paramNameTag(name), 'may be null')
+  return endsWithForTag(comments, paramNameTag(name), 'may be null') or endsWithForTag(comments, paramNameTag(name), 'pass null')
 
 def readAndGenerate(inputFiles, outputPath, scheme):
   outputHeader = outputPath + '.h'
