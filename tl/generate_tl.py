@@ -156,7 +156,7 @@ def generate(scheme):
   readAndGenerate(inputFiles, outputPath, scheme)
 
 def endsWithForTag(comments, tag, ending):
-  position = comments.find('@' + tag)
+  position = comments.find('@' + tag + ' ')
   if (position < 0):
     return False
   tail = comments[(position + len(tag) + 1):]
