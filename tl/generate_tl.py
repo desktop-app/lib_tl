@@ -13,7 +13,7 @@ def readInputs(inputFiles):
   for inputFile in inputFiles:
     names.append(os.path.basename(inputFile))
     lines.append('---types---')
-    with open(inputFile) as f:
+    with open(inputFile, encoding="utf-8") as f:
       for line in f:
         layerline = re.match(r'// LAYER (\d+)', line)
         if (layerline):
