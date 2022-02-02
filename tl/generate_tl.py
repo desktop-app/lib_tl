@@ -166,7 +166,7 @@ def endsWithForTag(comments, tag, ending):
   fullending = '; ' + ending.strip()
   if len(stripped) < len(fullending):
     return False
-  if stripped.endswith(fullending) or stripped.find(fullending + '.') >= 0 or stripped.find(fullending + ';') >= 0 or stripped.find(fullending + ' if') >= 0 or stripped.find(fullending + ' to') >= 0 or stripped.find(fullending + ' otherwise') >= 0:
+  if stripped.endswith(fullending) or stripped.find(fullending + '.') >= 0 or stripped.find(fullending + ';') >= 0 or stripped.find(fullending + ' if') >= 0 or stripped.find(fullending + ' to') >= 0 or stripped.find(fullending + ' otherwise') >= 0 or stripped.find(fullending + ' unless') >= 0:
     return True
   if line.find(ending) >= 0:
     print('WARNING: Found "' + ending + '" in "' + stripped + '"')
