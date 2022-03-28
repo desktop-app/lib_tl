@@ -37,14 +37,15 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
       conditions = data[7]
       trivialConditions = data[8]
       isTemplate = data[9]
+      flagRawType = 'uint64' if hasFlags64 != '' else 'uint32'
 
       templateArgument = ''
       if (isTemplate != ''):
           templateArgument = '<SerializedRequest>'
 
-      result += 'bool Serialize_' + name + '(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n'
+      result += 'bool Serialize_' + name + '(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, Stages &stages, Flags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint64 iflag) {\n'
       if (len(conditions)):
-        result += '\tauto flag = ' + prefix + name + templateArgument + '::Flags::from_raw(iflag);\n\n'
+        result += '\tauto flag = ' + prefix + name + templateArgument + '::Flags::from_raw(' + flagRawType + '(iflag));\n\n'
       if (len(prms)):
         result += '\tif (stage) {\n'
         result += '\t\tto.add(",\\n").addSpaces(lev);\n'
@@ -58,11 +59,17 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
           v = prms[k]
           result += '\tcase ' + str(stage) + ': to.add("  ' + k + ': "); ++stages.back(); '
           if (k == hasFlags):
-            result += 'if (start >= end) return false; else flags.back() = *start; '
+            if (hasFlags64 != ''):
+              result += 'if (start + 1 >= end) return false; else flags.back() = int64(*start) + (int64(*(start + 1)) << 32); '
+            else:
+              result += 'if (start >= end) return false; else flags.back() = *start; '
           if (k in trivialConditions):
+            flagBitValue = int(conditions[k])
+            flagFieldName = hasFlags64 if flagBitValue >= 32 else hasFlags
+            flagBitLogged = (flagBitValue - 32) if flagBitValue >= 32 else flagBitValue
             result += 'if (flag & ' + prefix + name + templateArgument + '::Flag::f_' + k + ') { '
-            result += 'to.add("YES [ BY BIT ' + conditions[k] + ' IN FIELD ' + hasFlags + ' ]"); '
-            result += '} else { to.add("[ SKIPPED BY BIT ' + conditions[k] + ' IN FIELD ' + hasFlags + ' ]"); } '
+            result += 'to.add("YES [ BY BIT ' + str(flagBitLogged) + ' IN FIELD ' + flagFieldName + ' ]"); '
+            result += '} else { to.add("[ SKIPPED BY BIT ' + str(flagBitLogged) + ' IN FIELD ' + flagFieldName + ' ]"); } '
           else:
             if (k in conditions):
               result += 'if (flag & ' + prefix + name + templateArgument + '::Flag::f_' + k + ') { '
@@ -104,6 +111,9 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
                   result += '); vtypes.push_back('
                 if (re.match(r'^flags<', restype)):
                   result += idPrefix + 'flags'
+                  if (k == hasFlags):
+                    if (hasFlags64 != ''):
+                      result += '64'
                 else:
                   result += idPrefix + restype + '+0'
                 if (not vtypeget):
@@ -114,7 +124,10 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
               result += '); vtypes.push_back(0'
             result += '); stages.push_back(0); flags.push_back(0); '
             if (k in conditions):
-              result += '} else { to.add("[ SKIPPED BY BIT ' + conditions[k] + ' IN FIELD ' + hasFlags + ' ]"); } '
+              flagBitValue = int(conditions[k])
+              flagFieldName = hasFlags64 if flagBitValue >= 32 else hasFlags
+              flagBitLogged = (flagBitValue - 32) if flagBitValue >= 32 else flagBitValue
+              result += '} else { to.add("[ SKIPPED BY BIT ' + str(flagBitLogged) + ' IN FIELD ' + flagFieldName + ' ]"); } '
           result += 'break;\n'
           stage = stage + 1
         result += '\tdefault: to.add("}"); types.pop_back(); vtypes.pop_back(); stages.pop_back(); flags.pop_back(); break;\n'
@@ -1337,7 +1350,7 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
     # manual types added here
 
     textSerializeMethods += '\
-bool Serialize_rpc_result(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
+bool Serialize_rpc_result(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, Stages &stages, Flags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint64 iflag) {\n\
 	if (stage) {\n\
 		to.add(",\\n").addSpaces(lev);\n\
 	} else {\n\
@@ -1352,7 +1365,7 @@ bool Serialize_rpc_result(DumpToTextBuffer &to, int32 stage, int32 lev, Types &t
 	return true;\n\
 }\n\
 \n\
-bool Serialize_msg_container(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
+bool Serialize_msg_container(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, Stages &stages, Flags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint64 iflag) {\n\
 	if (stage) {\n\
 		to.add(",\\n").addSpaces(lev);\n\
 	} else {\n\
@@ -1366,7 +1379,7 @@ bool Serialize_msg_container(DumpToTextBuffer &to, int32 stage, int32 lev, Types
 	return true;\n\
 }\n\
 \n\
-bool Serialize_core_message(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
+bool Serialize_core_message(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, Stages &stages, Flags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint64 iflag) {\n\
 	if (stage) {\n\
 		to.add(",\\n").addSpaces(lev);\n\
 	} else {\n\
@@ -1392,11 +1405,12 @@ bool Serialize_core_message(DumpToTextBuffer &to, int32 stage, int32 lev, Types 
 namespace {\n\
 \n\
 using Types = QVector<' + typeIdType + '>;\n\
-using StagesFlags = QVector<int32>;\n\
+using Stages = QVector<int32>;\n\
+using Flags = QVector<int64>;\n\
 \n\
 ' + textSerializeMethods + '\n\
 \n\
-using TextSerializer = bool (*)(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag);\n\
+using TextSerializer = bool (*)(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, Stages &stages, Flags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint64 iflag);\n\
 \n\
 base::flat_map<' + typeIdType + ', TextSerializer> CreateTextSerializers() {\n\
 	return {\n\
@@ -1409,13 +1423,15 @@ base::flat_map<' + typeIdType + ', TextSerializer> CreateTextSerializers() {\n\
 bool DumpToTextType(DumpToTextBuffer &to, const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + primeType + ' cons, uint32 level, ' + primeType + ' vcons) {\n\
 	static auto kSerializers = CreateTextSerializers();\n\
 \n\
-	QVector<' + typeIdType + '> types, vtypes;\n\
-	QVector<int32> stages, flags;\n\
+	Types types, vtypes;\n\
+	Stages stages;\n\
+  Flags flags;\n\
 	types.reserve(20); vtypes.reserve(20); stages.reserve(20); flags.reserve(20);\n\
 	types.push_back(' + typeIdType + '(cons)); vtypes.push_back(' + typeIdType + '(vcons)); stages.push_back(0); flags.push_back(0);\n\
 \n\
 	' + typeIdType + ' type = cons, vtype = vcons;\n\
-	int32 stage = 0, flag = 0;\n\
+	int32 stage = 0;\n\
+  int64 flag = 0;\n\
 \n\
 	while (!types.isEmpty()) {\n\
 		type = types.back();\n\
