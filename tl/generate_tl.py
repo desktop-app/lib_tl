@@ -32,10 +32,11 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
       prmsList = data[2]
       prms = data[3]
       hasFlags = data[4]
-      conditionsList = data[5]
-      conditions = data[6]
-      trivialConditions = data[7]
-      isTemplate = data[8]
+      hasFlags64 = data[5]
+      conditionsList = data[6]
+      conditions = data[7]
+      trivialConditions = data[8]
+      isTemplate = data[9]
 
       templateArgument = ''
       if (isTemplate != ''):
@@ -390,7 +391,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       typeid = typeid[1:]
 
     cleanline = nametype.group(1) + nametype.group(3) + '= ' + nametype.group(4)
-    cleanline = re.sub(r' [a-zA-Z0-9_]+\:flags\.[0-9]+\?true', '', cleanline)
+    cleanline = re.sub(r' [a-zA-Z0-9_]+\:flags2?\.[0-9]+\?true', '', cleanline)
     cleanline = cleanline.replace('<', ' ').replace('>', ' ').replace('  ', ' ')
     cleanline = re.sub(r'^ ', '', cleanline)
     cleanline = re.sub(r' $', '', cleanline)
@@ -447,7 +448,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     botsOnlyPrms = {}
     prmsList = []
     conditionsList = []
-    isTemplate = hasFlags = hasTemplate = ''
+    isTemplate = hasFlags = hasFlags64 = hasTemplate = ''
     for param in paramsList:
       if (re.match(r'^\s*$', param)):
         continue
@@ -472,6 +473,9 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         if nullablePrm or nullableVector:
           raise ValueError('Template param should not be nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
       elif (ptypewide == '#'):
+        if hasFlags != '' and pname == hasFlags + '2':
+          hasFlags64 = pname
+          continue
         hasFlags = pname
         if funcsNow:
           ptype = 'flags<' + fullTypeName(name) + '::Flags>'
@@ -485,7 +489,10 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           botsOnlyPrms[pname] = 1
         if (ptype.find('?') >= 0):
           pmasktype = re.match(r'([a-z_][a-z0-9_]*)\.([0-9]+)\?([A-Za-z0-9<>\._]+)', ptype)
-          if (not pmasktype or pmasktype.group(1) != hasFlags):
+          if not pmasktype:
+            raise ValueError('Bad param found: "' + param + '" in line: ' + line)
+          flagsName = pmasktype.group(1)
+          if flagsName != hasFlags and flagsName != hasFlags64:
             raise ValueError('Bad param found: "' + param + '" in line: ' + line)
           if nullablePrm or nullableVector:
             raise ValueError('Conditional param should not be nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
@@ -497,9 +504,12 @@ def readAndGenerate(inputFiles, outputPath, scheme):
               ptype = handleTemplate(ptype)
           if (not pname in conditions):
             conditionsList.append(pname)
-            conditions[pname] = pmasktype.group(2)
+            if flagsName == hasFlags64:
+              conditions[pname] = str(int(pmasktype.group(2)) + 32)
+            else:
+              conditions[pname] = pmasktype.group(2)
             if (ptype == 'true'):
-              trivialConditions[pname] = 1
+              trivialConditions[pname] = flagsName
         elif (ptype.find('<') >= 0):
           if nullablePrm:
             raise ValueError('Vector param should not be nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
@@ -537,17 +547,19 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       prmsStr = []
       prmsInit = []
       prmsNames = []
-      if (hasFlags != ''):
-        funcsText += '\tenum class Flag : uint32 {\n'
+      if hasFlags != '':
+        flagsType = 'uint64' if hasFlags64 != '' else 'uint32'
+        flagsBit = '1ULL' if hasFlags64 != '' else '1U'
+        funcsText += '\tenum class Flag : ' + flagsType + ' {\n'
         maxbit = 0
         parentFlagsCheck[fullTypeName(name)] = {}
         for paramName in conditionsList:
-          funcsText += '\t\tf_' + paramName + ' = (1U << ' + conditions[paramName] + '),\n'
+          funcsText += '\t\tf_' + paramName + ' = (' + flagsBit + ' << ' + conditions[paramName] + '),\n'
           parentFlagsCheck[fullTypeName(name)][paramName] = conditions[paramName]
           maxbit = max(maxbit, int(conditions[paramName]))
         if (maxbit > 0):
           funcsText += '\n'
-        funcsText += '\t\tMAX_FIELD = (1U << ' + str(maxbit) + '),\n'
+        funcsText += '\t\tMAX_FIELD = (' + flagsBit + ' << ' + str(maxbit) + '),\n'
         funcsText += '\t};\n'
         funcsText += '\tusing Flags = base::flags<Flag>;\n'
         funcsText += '\tfriend inline constexpr bool is_flag_type(Flag) { return true; };\n'
@@ -603,8 +615,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         readFunc = ''
         for k in prmsList:
           v = prms[k]
-          if (k in conditionsList):
-            if (not k in trivialConditions):
+          if k in conditionsList:
+            if not k in trivialConditions:
               readFunc += '\t\t&& ((_' + hasFlags + '.v & Flag::f_' + k + ') ? _' + k + '.read(from, end) : ((_' + k + ' = ' + fullTypeName(v) + '()), true))\n'
           else:
             readFunc += '\t\t&& _' + k + '.read(from, end)\n'
@@ -626,8 +638,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           methodBodies += 'template <typename Accumulator>\n'
           methodBodies += 'void ' + fullTypeName(name) + '::write(Accumulator &to) const {\n'
         for k in prmsList:
-          if (k in conditionsList):
-            if (not k in trivialConditions):
+          if k in conditionsList:
+            if not k in trivialConditions:
               methodBodies += '\tif (_' + hasFlags + '.v & Flag::f_' + k + ') _' + k + '.write(to);\n'
           else:
             methodBodies += '\t_' + k + '.write(to);\n'
@@ -738,7 +750,7 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
         funcsList.append(restype)
         funcsDict[restype] = []
 #        TypesDict[restype] = resType
-      funcsDict[restype].append([name, typeid, prmsList, prms, hasFlags, conditionsList, conditions, trivialConditions, isTemplate, nullablePrms, nullableVectors, botsOnlyPrms])
+      funcsDict[restype].append([name, typeid, prmsList, prms, hasFlags, hasFlags64, conditionsList, conditions, trivialConditions, isTemplate, nullablePrms, nullableVectors, botsOnlyPrms])
     else:
       if (isTemplate != ''):
         print('Template types not allowed: "' + resType + '" in line: ' + line)
@@ -747,7 +759,7 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
         typesList.append(restype)
         typesDict[restype] = []
       TypesDict[restype] = resType
-      typesDict[restype].append([name, typeid, prmsList, prms, hasFlags, conditionsList, conditions, trivialConditions, isTemplate, nullablePrms, nullableVectors, botsOnlyPrms])
+      typesDict[restype].append([name, typeid, prmsList, prms, hasFlags, hasFlags64, conditionsList, conditions, trivialConditions, isTemplate, nullablePrms, nullableVectors, botsOnlyPrms])
 
       TypeConstructors[name] = {'typeBare': restype, 'typeBoxed': resType}
 
@@ -875,13 +887,14 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
       prmsList = data[2]
       prms = data[3]
       hasFlags = data[4]
-      conditionsList = data[5]
-      conditions = data[6]
-      trivialConditions = data[7]
-      isTemplate = data[8]
-      nullablePrms = data[9]
-      nullableVectors = data[10]
-      botsOnlyPrms = data[11]
+      hasFlags64 = data[5]
+      conditionsList = data[6]
+      conditions = data[7]
+      trivialConditions = data[8]
+      isTemplate = data[9]
+      nullablePrms = data[10]
+      nullableVectors = data[11]
+      botsOnlyPrms = data[12]
 
       dataText = ''
       if (len(prms) > len(trivialConditions) + len(botsOnlyPrms)):
@@ -898,23 +911,25 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
       writeText = ''
 
       if (hasFlags != ''):
-        dataText += '\tenum class Flag : uint32 {\n'
+        flagsType = 'uint64' if hasFlags64 != '' else 'uint32'
+        flagsBit = '1ULL' if hasFlags64 != '' else '1U'
+        dataText += '\tenum class Flag : ' + flagsType + ' {\n'
         maxbit = 0
         parentFlagsCheck[fullDataName(name)] = {}
         for paramName in conditionsList:
-          dataText += '\t\tf_' + paramName + ' = (1U << ' + conditions[paramName] + '),\n'
+          dataText += '\t\tf_' + paramName + ' = (' + flagsBit + ' << ' + conditions[paramName] + '),\n'
           parentFlagsCheck[fullDataName(name)][paramName] = conditions[paramName]
           maxbit = max(maxbit, int(conditions[paramName]))
         if (maxbit > 0):
           dataText += '\n'
-        dataText += '\t\tMAX_FIELD = (1U << ' + str(maxbit) + '),\n'
+        dataText += '\t\tMAX_FIELD = (' + flagsBit + ' << ' + str(maxbit) + '),\n'
         dataText += '\t};\n'
         dataText += '\tusing Flags = base::flags<Flag>;\n'
         dataText += '\tfriend inline constexpr bool is_flag_type(Flag) { return true; };\n'
         dataText += '\n'
         if (len(conditions)):
           for paramName in conditionsList:
-            if (paramName in trivialConditions):
+            if paramName in trivialConditions:
               dataText += '\t[[nodiscard]] bool is_' + paramName + '() const;\n'
               constructsBodies += 'bool ' + fullDataName(name) + '::is_' + paramName + '() const {\n'
               constructsBodies += '\treturn _' + hasFlags + '.v & Flag::f_' + paramName + ';\n'
@@ -1004,7 +1019,7 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
               continue
             paramType = prms[paramName]
             ptypeFull = fullTypeName(paramType)
-            if (paramName in conditions):
+            if paramName in conditions:
               dataText += '\t[[nodiscard]] tl::conditional<' + ptypeFull + '> v' + paramName + '() const;\n'
               constructsBodies += 'tl::conditional<' + ptypeFull + '> ' + fullDataName(name) + '::v' + paramName + '() const {\n'
               constructsBodies += '\treturn (_' + hasFlags + '.v & Flag::f_' + paramName + ') ? &_' + paramName + ' : nullptr;\n'

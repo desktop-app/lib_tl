@@ -63,6 +63,7 @@ enum {
 
 	id_bytes = id_string,
 	id_flags = id_int,
+	id_flags64 = id_long
 };
 
 class int_type {
@@ -102,15 +103,15 @@ class flags_type {
 public:
 	Flags v = 0;
 	static_assert(
-		sizeof(Flags) == sizeof(int32),
-		"flags_type are allowed only wrapping int32 flag types!");
+		sizeof(Flags) == sizeof(int32) || sizeof(Flags) == sizeof(int64),
+		"flags_type are allowed only wrapping int32 or int64 flag types!");
 
 	constexpr flags_type() noexcept = default;
 	constexpr flags_type(details::zero_flags_helper helper) noexcept {
 	}
 
 	constexpr uint32 type() const noexcept {
-		return id_flags;
+		return (sizeof(Flags) == sizeof(int32)) ? id_flags : id_flags64;
 	}
 	template <typename Prime>
 	[[nodiscard]] bool read(const Prime *&from, const Prime *end, uint32 cons = id_flags) noexcept {
@@ -118,11 +119,22 @@ public:
 			return false;
 		}
 		v = Flags::from_raw(static_cast<typename Flags::Type>(Reader<Prime>::Get(from, end)));
+		if constexpr (sizeof(Flags) != sizeof(int32)) {
+			if (!Reader<Prime>::Has(1, from, end)) {
+				return false;
+			}
+			v |= Flags::from_raw(static_cast<typename Flags::Type>(Reader<Prime>::Get(from, end)) << 32);
+		}
 		return true;
 	}
 	template <typename Accumulator>
 	void write(Accumulator &to) const noexcept {
-		Writer<Accumulator>::Put(to, static_cast<uint32>(v.value()));
+		if constexpr (sizeof(Flags) == sizeof(int32)) {
+			Writer<Accumulator>::Put(to, static_cast<uint32>(v.value()));
+		} else {
+			Writer<Accumulator>::Put(to, static_cast<uint32>(v.value() & 0xFFFFFFFFULL));
+			Writer<Accumulator>::Put(to, static_cast<uint32>(v.value() >> 32));
+		}
 	}
 
 private:
