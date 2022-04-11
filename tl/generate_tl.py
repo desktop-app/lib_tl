@@ -830,11 +830,12 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
             name = data[0]
             prmsList = data[2]
             prms = data[3]
-            trivialConditions = data[7]
-            isTemplate = data[8]
-            nullablePrms = data[9]
-            nullableVectors = data[10]
-            botsOnlyPrms = data[11]
+            trivialConditions = data[8]
+            isTemplate = data[9]
+            nullablePrms = data[10]
+            nullableVectors = data[11]
+            botsOnlyPrms = data[12]
+
             conversionSourceFrom += '\tcase ' + conversionName(name) + '::ID: '
             if (len(prmsList) == 0):
               conversionSourceFrom += 'return ' + constructPrefix + name + '();\n'
@@ -878,11 +879,11 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
           for data in v:
             name = data[0]
             prms = data[3]
-            trivialConditions = data[7]
-            isTemplate = data[8]
-            nullablePrms = data[9]
-            nullableVectors = data[10]
-            botsOnlyPrms = data[11]
+            trivialConditions = data[8]
+            isTemplate = data[9]
+            nullablePrms = data[10]
+            nullableVectors = data[11]
+            botsOnlyPrms = data[12]
             if (len(prms) == len(trivialConditions)):
               conversionSourceTo += '\tcase ' + idPrefix + name + ': return new ' + conversionName(name) + '();\n'
             else:
