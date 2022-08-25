@@ -671,6 +671,10 @@ public:
 		return _value ? _value->v : Inner();
 	}
 
+	constexpr bool has_value() const noexcept {
+		return (_value != nullptr);
+	}
+
 private:
 	const T *_value = nullptr;
 
