@@ -10,6 +10,7 @@
 #include "base/flags.h"
 #include "base/bytes.h"
 
+#include <cstring>
 #include <QtCore/QVector>
 
 namespace tl {
