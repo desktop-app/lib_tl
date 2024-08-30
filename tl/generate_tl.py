@@ -1426,13 +1426,13 @@ bool DumpToTextType(DumpToTextBuffer &to, const ' + primeType + ' *&from, const 
 \n\
 	Types types, vtypes;\n\
 	Stages stages;\n\
-  Flags flags;\n\
+	Flags flags;\n\
 	types.reserve(20); vtypes.reserve(20); stages.reserve(20); flags.reserve(20);\n\
 	types.push_back(' + typeIdType + '(cons)); vtypes.push_back(' + typeIdType + '(vcons)); stages.push_back(0); flags.push_back(0);\n\
 \n\
 	' + typeIdType + ' type = cons, vtype = vcons;\n\
 	int32 stage = 0;\n\
-  int64 flag = 0;\n\
+	int64 flag = 0;\n\
 \n\
 	while (!types.isEmpty()) {\n\
 		type = types.back();\n\
