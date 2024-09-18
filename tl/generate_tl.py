@@ -195,6 +195,9 @@ def isBotsOnlyLine(comments):
 def isBotsOnlyParam(comments, name):
   return endsWithForTag(comments, paramNameTag(name), 'for bots only')
 
+def isMobileOnlyLine(comments):
+  return endsWithForTag(comments, 'description', 'for official mobile applications only')
+
 def isNullableVector(comments, name):
   return name.endswith('s') and endsWithForTag(comments, paramNameTag(name), name + ' may be null')
 
@@ -384,7 +387,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     comments = accumulatedComments
     accumulatedComments = ''
 
-    if isBotsOnlyLine(comments):
+    if isBotsOnlyLine(comments) or isMobileOnlyLine(comments):
       continue
 
     originalname = nametype.group(1)
