@@ -190,10 +190,10 @@ def paramNameTag(name):
   return 'param_description' if name == 'description' else name
 
 def isBotsOnlyLine(comments):
-  return endsWithForTag(comments, 'description', 'for bots only')
+  return endsWithForTag(comments, 'description', 'for bots only') or endsWithForTag(comments, 'description', 'bots only')
 
 def isBotsOnlyParam(comments, name):
-  return endsWithForTag(comments, paramNameTag(name), 'for bots only')
+  return endsWithForTag(comments, paramNameTag(name), 'for bots only') or endsWithForTag(comments, paramNameTag(name), 'bots only')
 
 def isMobileOnlyLine(comments):
   return endsWithForTag(comments, 'description', 'for official mobile applications only')
