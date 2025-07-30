@@ -1465,6 +1465,10 @@ bool DumpToTextType(DumpToTextBuffer &to, const ' + primeType + ' *&from, const 
 			types.pop_back(); vtypes.pop_back(); stages.pop_back(); flags.pop_back();\n\
 		} else {\n\
 			to.error();\n\
+\n\
+			const auto bad = QByteArray::number(type, 16);\n\
+			to.add("(ERROR_SCHEME_BAD_CONS:0x").add(bad.data()).add(")");\n\
+\n\
 			return false;\n\
 		}\n\
 	}\n\
