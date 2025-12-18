@@ -22,10 +22,10 @@ public:
 
 	boxed() = default;
 	boxed(const boxed<bare> &v) = default;
-	boxed<bare> &operator=(const boxed<bare> &v) = default;
+	boxed<bare> &operator=(const boxed<bare> &v) & = default;
 	boxed(const bare &v) : bare(v) {
 	}
-	boxed<bare> &operator=(const bare &v) {
+	boxed<bare> &operator=(const bare &v) & {
 		*((bare*)this) = v;
 		return *this;
 	}
