@@ -1332,6 +1332,8 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
 
   for pureChildName in flagInheritance:
     childName = dataPrefix + pureChildName
+    if childName == 'MTPDchannelForbidden':
+      continue
     parentName = dataPrefix + flagInheritance[pureChildName]
     for flag in parentFlagsCheck[childName]:
   #
