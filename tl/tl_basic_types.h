@@ -551,6 +551,12 @@ public:
 		}
 		auto count = Reader<Prime>::Get(from, end);
 
+		// Every element consumes at least one prime, so an honest count
+		// cannot exceed the remaining buffer. This bounds the allocation
+		// below against a hostile length claim.
+		if (count > uint32(end - from)) {
+			return false;
+		}
 		auto vector = QVector<T>(count, T());
 		for (auto &item : vector) {
 			if (!item.read(from, end)) {
