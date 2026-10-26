@@ -22,8 +22,28 @@ def readInputs(inputFiles):
           lines.append(line)
   return lines, layer, names
 
+# text serialization: '<tl name>.<field>' plain string values dumped as a placeholder
+def findTextSerializeHidden(entries, typeDatas):
+  result = {}
+  for entry in entries:
+    dot = entry.rfind('.')
+    name = entry[:dot].replace('.', '_')
+    field = entry[dot + 1:]
+    found = False
+    for typeData in typeDatas:
+      for restype in typeData:
+        for data in typeData[restype]:
+          if (dot > 0 and data[0] == name and field in data[3]):
+            if (data[3][field] != 'string' or field in data[7]):
+              raise ValueError('dumpToText hidden value is not a plain string field: ' + entry)
+            found = True
+    if (not found):
+      raise ValueError('dumpToText hidden value field not found: ' + entry)
+    result.setdefault(name, []).append(field)
+  return result
+
 # text serialization: types and funcs
-def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, prefix):
+def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, prefix, hidden):
   result = ''
   for restype in typeList:
     v = typeData[restype]
@@ -90,6 +110,8 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
             flagBitLogged = (flagBitValue - 32) if flagBitValue >= 32 else flagBitValue
             result += 'to.add("YES [ BY BIT ' + str(flagBitLogged) + ' IN FIELD ' + flagFieldName + ' ]"); '
           else:
+            if (k in hidden.get(name, [])):
+              result += 'to.hideNextLeaf(); '
             result += 'types.push_back('
             vtypeget = re.match(r'^[Vv]ector<MTP([A-Za-z0-9\._]+)>', v)
             if (vtypeget):
@@ -329,6 +351,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   writeSerialization = 'dumpToText' in scheme
   serializationScheme = scheme.get('dumpToText', {})
   serializationInclude = serializationScheme.get('include') if writeSerialization else ''
+  serializationHidden = serializationScheme.get('hiddenValues', [])
 
   if primeType == '' or bufferType == '':
     if readWriteSection or writeSerialization:
@@ -801,9 +824,10 @@ ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
       forwTypedefs += 'using ' + fullTypeName(typeName[:1].upper() + typeName[1:]) + ' = tl::boxed<' + fullTypeName(typeName) + '<T>>;\n'
 
   if writeSerialization:
-    textSerializeMethods += addTextSerialize(typesList, typesDict, typesDict, idPrefix, primeType, boxed, dataPrefix)
+    hidden = findTextSerializeHidden(serializationHidden, [typesDict, funcsDict])
+    textSerializeMethods += addTextSerialize(typesList, typesDict, typesDict, idPrefix, primeType, boxed, dataPrefix, hidden)
     textSerializeInit += addTextSerializeInit(typesList, typesDict, idPrefix) + '\n'
-    textSerializeMethods += addTextSerialize(funcsList, funcsDict, typesDict, idPrefix, primeType, boxed, typePrefix)
+    textSerializeMethods += addTextSerialize(funcsList, funcsDict, typesDict, idPrefix, primeType, boxed, typePrefix, hidden)
     textSerializeInit += addTextSerializeInit(funcsList, funcsDict, idPrefix) + '\n'
 
   for restype in typesList:
